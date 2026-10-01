@@ -1,0 +1,41 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: app-redis
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: app-postgres
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent123
+      POSTGRES_DB: agent_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  api:
+    build: .
+    container_name: app-api
+    ports:
+      - "8000:8000"
+    environment:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      DATABASE_URL: postgresql+psycopg2://agent:agent123@postgres:5432/agent_db
+      HF_ENDPOINT: https://hf-mirror.com
+    depends_on:
+      - redis
+      - postgres
+    volumes:
+      - ./faiss_index:/app/faiss_index
+      - ./data:/app/data
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  postgres_data:

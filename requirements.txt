@@ -1,0 +1,17 @@
+langgraph==1.2.12
+langchain-openai==1.6.6
+langchain-community==0.4.2
+langchain-core==1.6.5
+langchain-text-splitters==1.1.2
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+sse-starlette==3.4.11
+pydantic==2.13.5
+python-dotenv==1.2.3
+redis==8.1.0
+sqlalchemy==2.1.1
+psycopg2-binary==2.9.13
+faiss-cpu==1.13.0
+sentence-transformers==6.1.0
+openai==3.19.2
+httpx==0.28.1

@@ -1,0 +1,10 @@
+.venv/
+.git/
+.gitignore
+.idea/
+__pycache__/
+*.pyc
+faiss_index/
+*.log
+test_*.py
+.env
