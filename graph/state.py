@@ -16,3 +16,6 @@ class AgentState(TypedDict):
     final_answer: str
     status: str
     iteration: int
+    session_id: str  # ← 新增
+    user_id: str  # ← 新增
+    memory_context: str  # ← 新增

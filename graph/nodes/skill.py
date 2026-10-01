@@ -1,7 +1,11 @@
 import os
-import csv
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
 from langchain_openai import ChatOpenAI
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import FAISS
 from graph.state import AgentState
+from memory.short_term import get_session, update_session
 
 llm = ChatOpenAI(
     model="deepseek-chat",
@@ -10,55 +14,55 @@ llm = ChatOpenAI(
     temperature=0
 )
 
-
-def load_data_context() -> str:
-    """读取 data/ 目录下的所有数据文件，拼成上下文"""
-    context_parts = []
-    data_dir = "data"
-
-    if not os.path.exists(data_dir):
-        return "（未找到 data 目录）"
-
-    for filename in os.listdir(data_dir):
-        filepath = os.path.join(data_dir, filename)
-        if not os.path.isfile(filepath):
-            continue
-
-        try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                content = f.read()
-            # 每个文件截取前 2000 字符，避免上下文过长
-            context_parts.append(f"### 文件：{filename}\n{content[:2000]}")
-        except Exception as e:
-            print(f"[Skill] 读取 {filename} 失败：{e}")
-
-    return "\n\n".join(context_parts)
+# 全局加载一次向量库
+embeddings = HuggingFaceEmbeddings(model_name="BAAI/bge-small-zh-v1.5")
+vectorstore = FAISS.load_local(
+    "faiss_index",
+    embeddings,
+    allow_dangerous_deserialization=True
+)
 
 
 def skill_node(state: AgentState) -> dict:
     current = state['plan'][0] if state.get('plan') else state['user_input']
 
-    # 加载真实数据
-    data_context = load_data_context()
+    # 1. 从短期记忆读取上下文
+    session_id = state.get("session_id", "default_session")
+    session_data = get_session(session_id)
+    memory_context = session_data.get("last_interaction", "")
 
-    prompt = f"""你是一个企业数据分析助手。请基于以下真实数据完成子任务。
+    # 2. 用 RAG 检索相关文档
+    docs = vectorstore.similarity_search(current, k=3)
+    rag_context = "\n\n".join([d.page_content for d in docs])
 
-【可用数据】
-{data_context}
+    # 3. 构造 Prompt（融合记忆 + RAG + 当前任务）
+    prompt = f"""你是一个企业数据分析助手。请基于以下信息完成子任务。
+
+【历史对话记忆】
+{memory_context if memory_context else "（无历史记录）"}
+
+【相关知识片段】
+{rag_context}
 
 【当前子任务】
 {current}
 
 【要求】
-- 优先使用数据中的具体数字和事实
+- 优先使用提供的知识片段中的具体信息
 - 用简洁的中文回答，300字以内
-- 如果数据中确实没有相关信息，明确说明"""
+- 如果知识片段中确实没有相关信息，明确说明"""
 
     result = llm.invoke(prompt)
     print(f"[Skill] 当前子任务：{current}")
+    print(f"[Skill] 检索到 {len(docs)} 个片段")
+
+    # 4. 更新短期记忆
+    update_session(session_id, "last_interaction", result.content[:500])
+
     return {
         "current_task": current,
-        "retrieved_docs": data_context[:500],  # 记录用了哪些数据
+        "retrieved_docs": rag_context[:500],
         "tool_result": result.content,
+        "memory_context": memory_context,
         "status": "skill_executed"
     }

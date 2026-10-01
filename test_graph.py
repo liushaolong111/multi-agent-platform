@@ -7,7 +7,9 @@ result = graph.invoke({
     "user_input": "分析上季度销售数据并生成一份报告",
     "messages": [],
     "status": "start",
-    "iteration": 0
+    "iteration": 0,
+    "session_id": "test_session_001",
+    "user_id": "test_user_001"
 })
 
 print("\n" + "=" * 50)
