@@ -8,3 +8,4 @@ postgres_data/
 *.log
 .DS_Store
 .idea/
+faiss_index/
