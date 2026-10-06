@@ -12,14 +12,18 @@ llm = ChatOpenAI(
 
 
 def planner_node(state: AgentState) -> dict:
-    prompt = f"""你是一个任务规划器。将以下任务拆解为3-5个子任务，
-以JSON数组格式返回，每个子任务是一个字符串。
+    prompt = f"""你是一个任务规划器。将以下任务拆解为2-4个**具体可执行**的子任务，
+    以JSON数组格式返回。
 
-任务类型：{state['task_type']}
-用户输入：{state['user_input']}
+    任务类型：{state['task_type']}
+    用户输入：{state['user_input']}
 
-只返回JSON数组，不要其他内容，不要用代码块包裹。
-示例格式：["子任务1", "子任务2", "子任务3"]"""
+    要求：
+    - 每个子任务必须是**直接可以执行的**，不要写"明确XX"这种抽象任务
+    - 例如"搞个总的销售"应该拆成：["计算总销售额", "列出分产品销售额"]
+    - 只返回JSON数组，不要其他内容
+
+    示例格式：["子任务1", "子任务2"]"""
 
     result = llm.invoke(prompt)
     content = result.content.strip().replace("```json", "").replace("```", "").strip()

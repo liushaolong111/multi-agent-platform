@@ -11,17 +11,18 @@ llm = ChatOpenAI(
 
 
 def reviewer_node(state: AgentState) -> dict:
-    prompt = f"""审核以下回答是否基本完成了任务。
+    prompt = f"""审核以下回答是否**直接回答了用户的问题**。
 
-任务：{state['current_task']}
-回答：{state['tool_result']}
+    任务：{state['current_task']}
+    回答：{state['tool_result']}
 
-审核标准（从宽）：
-- 只要回答内容与任务相关，且有一定信息量，就通过
-- 只有当回答完全跑题、空白或明显错误时，才要求重做
+    审核标准：
+    - 如果回答包含**具体数字或结论**，通过
+    - 如果回答只是描述"应该怎么分析"、"统计维度包括"这类空话，不通过
+    - 如果回答完全跑题或空白，不通过
 
-结论只能是一个词：
-APPROVED 或 REVISE"""
+    结论只能是一个词：
+    APPROVED 或 REVISE"""
 
     result = llm.invoke(prompt)
     verdict = "APPROVED" if "APPROVED" in result.content.upper() else "REVISE"
