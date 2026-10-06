@@ -9,6 +9,4 @@ postgres_data/
 .DS_Store
 .idea/
 faiss_index/
-# Docker 相关
-faiss_index/
 .docker/
