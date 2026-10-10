@@ -1,24 +1,37 @@
-from dotenv import load_dotenv
-load_dotenv()
+"""FastAPI 服务 + SSE 流式接口 + Web UI。"""
+import html
+import json
+import logging
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import HTMLResponse, StreamingResponse
+from pydantic import BaseModel, Field
+
+import config
 from graph.service import graph
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Multi-Agent Platform")
 
-# 允许跨域（方便前端调用）
+# CORS：生产环境应从环境变量配置允许的来源
+allow_origins = os.getenv("CORS_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allow_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., min_length=1, max_length=2000)
     user_id: str = "default_user"
     session_id: str = "default_session"
 
@@ -35,29 +48,43 @@ def root():
     return {"status": "ok", "service": "Multi-Agent Platform"}
 
 
+@app.get("/health")
+def health():
+    """健康检查：报告 LLM 配置是否就绪。"""
+    missing = config.check_llm_config()
+    return {
+        "status": "ok" if not missing else "degraded",
+        "llm_configured": missing is None,
+        "missing_config": missing,
+    }
+
+
 @app.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest):
-    result = graph.invoke({
-        "user_input": request.message,
-        "messages": [],
-        "status": "start",
-        "iteration": 0,
-        "session_id": request.session_id,
-        "user_id": request.user_id
-    })
+async def chat(request: ChatRequest):
+    """一次性返回接口。"""
+    result = await graph.ainvoke(
+        {
+            "user_input": request.message,
+            "messages": [],
+            "status": "start",
+            "iteration": 0,
+            "session_id": request.session_id,
+            "user_id": request.user_id,
+        }
+    )
 
     return ChatResponse(
         answer=result.get("final_answer") or result.get("tool_result", ""),
         task_type=result.get("task_type", ""),
         plan=result.get("plan", []),
-        review_verdict=result.get("review_verdict", "")
+        review_verdict=result.get("review_verdict", ""),
     )
-import json
-from fastapi.responses import StreamingResponse
 
 
 @app.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
+    """SSE 流式接口，逐节点推送执行过程。"""
+
     async def event_generator():
         try:
             async for event in graph.astream(
@@ -67,26 +94,22 @@ async def chat_stream(request: ChatRequest):
                     "status": "start",
                     "iteration": 0,
                     "session_id": request.session_id,
-                    "user_id": request.user_id
+                    "user_id": request.user_id,
                 },
-                stream_mode="updates"
+                stream_mode="updates",
             ):
                 for node_name, node_output in event.items():
                     payload = {
                         "node": node_name,
-                        "output": str(node_output)[:300]
+                        "output": str(node_output)[:500],
                     }
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
         except Exception as e:
+            logger.exception("[API] 流式请求异常")
             yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream"
-    )
-
-from fastapi.responses import HTMLResponse
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.get("/ui", response_class=HTMLResponse)
@@ -120,6 +143,13 @@ async def ui():
     const msgInput = document.getElementById('msg');
     const output = document.getElementById('output');
 
+    // 转义 HTML，防止 XSS
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = String(str);
+      return div.innerHTML;
+    }
+
     sendBtn.onclick = async () => {
       output.innerHTML = '';
       sendBtn.disabled = true;
@@ -152,7 +182,9 @@ async def ui():
             try {
               const data = JSON.parse(content);
               const div = document.createElement('div');
-              div.innerHTML = `<span class="node">[${data.node}]</span> <span class="content">${data.output}</span>`;
+              // 使用转义后的内容，避免 XSS
+              div.innerHTML = '<span class="node">[' + escapeHtml(data.node) + ']</span> '
+                            + '<span class="content">' + escapeHtml(data.output) + '</span>';
               output.appendChild(div);
               output.scrollTop = output.scrollHeight;
             } catch (e) {}
@@ -169,3 +201,14 @@ async def ui():
 </body>
 </html>
     """
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    print("=" * 50)
+    print("🚀 多智能体协作平台启动中...")
+    print("访问地址：http://localhost:8000/ui")
+    print("API 文档：http://localhost:8000/docs")
+    print("=" * 50)
+    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)
