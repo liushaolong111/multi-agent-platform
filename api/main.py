@@ -101,7 +101,7 @@ async def chat_stream(request: ChatRequest):
                 for node_name, node_output in event.items():
                     payload = {
                         "node": node_name,
-                        "output": str(node_output)[:500],
+                        "output": str(node_output),
                     }
                     yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
