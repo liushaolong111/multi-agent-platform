@@ -29,33 +29,131 @@ vectorstore = FAISS.load_local(
 
 @lru_cache(maxsize=1)
 def compute_stats() -> str:
-    """用 pandas 精确计算销售数据的统计信息（结果缓存，数据不变时只算一次）。"""
+    """用 pandas 精确计算销售数据的统计信息（结果缓存，数据不变时只算一次）。
+
+    包含：总量、分产品、分区域、区域×产品交叉、月度趋势、Q1 环比 Q4。
+    """
     try:
-        df = pd.read_csv(os.path.join(config.DATA_DIR, "sales_q1.csv"))
+        df_q1 = pd.read_csv(os.path.join(config.DATA_DIR, "sales_q1.csv"))
+        df_q1["日期"] = pd.to_datetime(df_q1["日期"])
+        df_q1["月份"] = df_q1["日期"].dt.strftime("%Y-%m")
 
-        total_sales = df["销售额"].sum()
-        total_qty = df["数量"].sum()
+        total_sales = int(df_q1["销售额"].sum())
+        total_qty = int(df_q1["数量"].sum())
 
-        by_product = df.groupby("产品")["销售额"].sum().to_dict()
-        by_region = df.groupby("区域")["销售额"].sum().to_dict()
+        by_product = df_q1.groupby("产品")["销售额"].sum().sort_values(ascending=False)
+        by_region = df_q1.groupby("区域")["销售额"].sum().sort_values(ascending=False)
+
+        # 区域 × 产品 交叉表
+        cross = df_q1.pivot_table(
+            index="区域", columns="产品", values="销售额", aggfunc="sum", fill_value=0
+        )
+
+        # 月度趋势
+        monthly = df_q1.groupby("月份")["销售额"].sum()
+
+        # Q1 环比 Q4 2025
+        qoq_info = ""
+        q4_path = os.path.join(config.DATA_DIR, "sales_q4_2025.csv")
+        if os.path.exists(q4_path):
+            df_q4 = pd.read_csv(q4_path)
+            q4_total = int(df_q4["销售额"].sum())
+            qoq = (total_sales - q4_total) / q4_total * 100
+            qoq_info = (
+                f"\n环比（Q1 vs Q4 2025）：\n"
+                f"  Q4 2025 总销售额：{q4_total:,} 元\n"
+                f"  Q1 2026 总销售额：{total_sales:,} 元\n"
+                f"  环比增长率：{qoq:+.1f}%\n"
+            )
 
         stats = f"""【精确统计数据（由程序计算，可信）】
 总销售额：{total_sales:,} 元
 总销量：{total_qty} 件
-记录数：{len(df)} 条
+记录数：{len(df_q1)} 条
 
-分产品销售额：
+分产品销售额（降序）：
 """
         for product, amount in by_product.items():
-            stats += f"  - {product}：{amount:,} 元\n"
+            pct = amount / total_sales * 100
+            stats += f"  - {product}：{int(amount):,} 元（占比 {pct:.1f}%）\n"
 
-        stats += "\n分区域销售额：\n"
+        stats += "\n分区域销售额（降序）：\n"
         for region, amount in by_region.items():
-            stats += f"  - {region}：{amount:,} 元\n"
+            pct = amount / total_sales * 100
+            stats += f"  - {region}：{int(amount):,} 元（占比 {pct:.1f}%）\n"
+
+        stats += "\n区域×产品交叉表（元）：\n"
+        stats += "          " + "  ".join(f"{p:>8}" for p in cross.columns) + "\n"
+        for region in cross.index:
+            row = "  ".join(f"{int(cross.loc[region, p]):>8}" for p in cross.columns)
+            stats += f"  {region:<6} {row}\n"
+
+        stats += "\n月度销售额趋势：\n"
+        for month, amount in monthly.items():
+            stats += f"  - {month}：{int(amount):,} 元\n"
+
+        if qoq_info:
+            stats += qoq_info
 
         return stats
     except Exception as e:
         logger.warning("[Skill] 统计计算失败：%s", e)
+        return ""
+
+
+@lru_cache(maxsize=1)
+def compute_feedback_stats() -> str:
+    """从 customer_feedback.md 解析反馈表，计算量化统计。"""
+    try:
+        import re
+
+        path = os.path.join(config.DATA_DIR, "customer_feedback.md")
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # 解析 Markdown 表格行：| 编号 | 客户 | 评分 | 问题类型 | 描述 |
+        rows = re.findall(
+            r"\|\s*\d+\s*\|\s*([^|]+?)\s*\|\s*(\d)\s*\|\s*([^|]+?)\s*\|",
+            content,
+        )
+        if not rows:
+            return ""
+
+        ratings = [int(r[1]) for r in rows]
+        types = [r[2].strip() for r in rows]
+        avg_rating = sum(ratings) / len(ratings)
+
+        # 评分分布
+        dist = {}
+        for r in ratings:
+            dist[r] = dist.get(r, 0) + 1
+
+        # 问题类型分布
+        type_counts = {}
+        type_ratings = {}
+        for _, rating, ftype in rows:
+            type_counts[ftype] = type_counts.get(ftype, 0) + 1
+            type_ratings.setdefault(ftype, []).append(int(rating))
+
+        result = f"""【客户反馈精确统计（由程序计算，可信）】
+反馈总数：{len(rows)} 条
+平均评分：{avg_rating:.2f} / 5.0
+好评率（4-5分）：{(dist.get(5,0)+dist.get(4,0))/len(rows)*100:.1f}%
+差评率（2-3分）：{(dist.get(2,0)+dist.get(3,0))/len(rows)*100:.1f}%
+
+评分分布：
+"""
+        for score in sorted(dist.keys(), reverse=True):
+            result += f"  - {score} 分：{dist[score]} 条（{dist[score]/len(rows)*100:.0f}%）\n"
+
+        result += "\n问题类型分布（按反馈数）：\n"
+        for ftype, cnt in sorted(type_counts.items(), key=lambda x: -x[1]):
+            avg = sum(type_ratings[ftype]) / len(type_ratings[ftype])
+            result += f"  - {ftype}：{cnt} 条，平均评分 {avg:.1f}\n"
+
+        return result
+    except Exception as e:
+        logger.warning("[Skill] 反馈统计计算失败：%s", e)
         return ""
 
 
@@ -88,6 +186,7 @@ def skill_node(state: AgentState) -> dict:
 
     # 3. 预计算精确统计（已缓存）
     stats = compute_stats()
+    feedback_stats = compute_feedback_stats()
 
     # 4. 遍历所有子任务，逐个分析后聚合
     sub_answers = []
@@ -99,8 +198,11 @@ def skill_node(state: AgentState) -> dict:
 
         prompt = f"""你是一个企业数据分析助手。请**直接回答**用户的问题。
 
-【精确统计数据】（优先使用这里的数字！）
+【精确销售统计】（优先使用这里的数字！）
 {stats}
+
+【客户反馈精确统计】（涉及客户满意度时使用）
+{feedback_stats}
 
 【相关知识片段】
 {rag_context}

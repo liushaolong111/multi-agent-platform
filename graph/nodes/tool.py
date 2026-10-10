@@ -6,7 +6,7 @@ import os
 import config
 from graph.llm import safe_invoke
 from graph.state import AgentState
-from graph.nodes.skill import compute_stats
+from graph.nodes.skill import compute_stats, compute_feedback_stats
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 def _tool_query_database() -> str:
     """查询销售数据库，返回精确统计数据。"""
     return compute_stats()
+
+
+def _tool_query_feedback() -> str:
+    """查询客户反馈统计，返回量化的评分与问题类型分布。"""
+    return compute_feedback_stats()
 
 
 def _tool_read_file(filename: str) -> str:
@@ -30,6 +35,7 @@ def _tool_read_file(filename: str) -> str:
 
 _TOOLS = {
     "query_database": _tool_query_database,
+    "query_feedback": _tool_query_feedback,
     "read_file": _tool_read_file,
 }
 
@@ -45,12 +51,14 @@ def tool_node(state: AgentState) -> dict:
 已有回答：{existing_result[:200]}
 
 可用工具：
-- query_database：查询销售数据库的精确统计数据（销售额、销量、分产品/区域汇总）
+- query_database：查询销售数据库的精确统计数据（销售额、销量、分产品/区域汇总、环比）
+- query_feedback：查询客户反馈量化统计（平均评分、问题类型分布）
 - read_file：读取知识库文件，参数为文件名（如 product_info.md）
 
 判断规则：
 - 如果已有回答已包含具体数字且完整，返回 "no_tool"
 - 如果需要精确的销售数字，返回 {{"tool": "query_database"}}
+- 如果需要客户满意度/反馈统计，返回 {{"tool": "query_feedback"}}
 - 如果需要读取某个文件内容，返回 {{"tool": "read_file", "filename": "xxx"}}
 - 只返回 JSON 或 no_tool，不要其他内容"""
 
