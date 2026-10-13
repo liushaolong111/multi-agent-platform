@@ -1,11 +1,12 @@
 import os
+
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 from langchain_community.document_loaders import TextLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 
 def load_documents(data_dir: str = "data"):
@@ -48,7 +49,7 @@ def main():
     vectorstore = FAISS.from_documents(chunks, embeddings)
     vectorstore.save_local("faiss_index")
     print(f"\n✅ 入库完成！共 {len(chunks)} 个片段")
-    print(f"   索引路径：./faiss_index")
+    print("   索引路径：./faiss_index")
 
 
 if __name__ == "__main__":

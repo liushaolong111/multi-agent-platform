@@ -1,10 +1,9 @@
 """Router 节点：任务分类。"""
 import logging
 
+import config
 from graph.llm import safe_invoke
 from graph.state import AgentState
-
-import config
 
 logger = logging.getLogger(__name__)
 

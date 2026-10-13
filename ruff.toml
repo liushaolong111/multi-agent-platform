@@ -1,0 +1,7 @@
+target-version = "py311"
+line-length = 120
+
+[lint]
+# 聚焦高价值规则：语法错误、未使用变量/导入、导入排序、转义警告。
+# 不启用 BLE001：本项目的 except Exception 是有意的优雅降级设计（记忆层/LLM 不可达时不阻塞主流程）。
+select = ["E4", "E7", "E9", "F", "I", "W"]
