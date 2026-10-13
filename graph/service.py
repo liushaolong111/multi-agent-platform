@@ -1,9 +1,12 @@
 """LangGraph 工作流编排：Router → Planner → Skill → Tool → Reviewer。"""
+import functools
 import logging
+import time
 
 from langgraph.graph import END, START, StateGraph
 
 import config
+from graph.metrics import metrics
 from graph.nodes.planner import planner_node
 from graph.nodes.reviewer import reviewer_node
 from graph.nodes.router import router_node
@@ -12,6 +15,20 @@ from graph.nodes.tool import tool_node
 from graph.state import AgentState
 
 logger = logging.getLogger(__name__)
+
+
+def _timed(name: str, fn):
+    """包装节点函数，记录每次执行耗时到指标模块。"""
+
+    @functools.wraps(fn)
+    def wrapper(state):
+        start = time.perf_counter()
+        try:
+            return fn(state)
+        finally:
+            metrics.record_node(name, (time.perf_counter() - start) * 1000)
+
+    return wrapper
 
 
 def should_revise(state: AgentState) -> str:
@@ -28,11 +45,11 @@ def should_revise(state: AgentState) -> str:
 
 workflow = StateGraph(AgentState)
 
-workflow.add_node("router", router_node)
-workflow.add_node("planner", planner_node)
-workflow.add_node("skill", skill_node)
-workflow.add_node("tool", tool_node)
-workflow.add_node("reviewer", reviewer_node)
+workflow.add_node("router", _timed("router", router_node))
+workflow.add_node("planner", _timed("planner", planner_node))
+workflow.add_node("skill", _timed("skill", skill_node))
+workflow.add_node("tool", _timed("tool", tool_node))
+workflow.add_node("reviewer", _timed("reviewer", reviewer_node))
 
 workflow.add_edge(START, "router")
 workflow.add_edge("router", "planner")
