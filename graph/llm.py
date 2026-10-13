@@ -5,6 +5,7 @@ import time
 from langchain_openai import ChatOpenAI
 
 import config
+from graph.metrics import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,17 @@ llm = ChatOpenAI(
     temperature=config.LLM_TEMPERATURE,
     timeout=config.LLM_TIMEOUT,
 )
+
+
+def _record_usage(result, latency_ms: float, error: bool = False):
+    """从 LangChain 响应中提取 token 用量并记录到指标模块。"""
+    usage = getattr(result, "usage_metadata", None) or {}
+    metrics.record_llm_call(
+        latency_ms=latency_ms,
+        prompt_tokens=usage.get("input_tokens", 0),
+        completion_tokens=usage.get("output_tokens", 0),
+        error=error,
+    )
 
 
 def safe_invoke(prompt: str, fallback: str = "") -> str:
@@ -30,11 +42,14 @@ def safe_invoke(prompt: str, fallback: str = "") -> str:
     """
     last_error = None
     for attempt in range(1, config.LLM_MAX_RETRIES + 1):
+        start = time.perf_counter()
         try:
             result = llm.invoke(prompt)
+            _record_usage(result, (time.perf_counter() - start) * 1000)
             return result.content
         except Exception as e:
             last_error = e
+            metrics.record_llm_call((time.perf_counter() - start) * 1000, error=True)
             logger.warning(
                 "[LLM] 第 %d/%d 次调用失败：%s", attempt, config.LLM_MAX_RETRIES, e
             )
@@ -42,3 +57,32 @@ def safe_invoke(prompt: str, fallback: str = "") -> str:
                 time.sleep(2 ** (attempt - 1))  # 指数退避：1s, 2s, 4s
     logger.error("[LLM] 全部重试失败，使用兜底响应。最后错误：%s", last_error)
     return fallback
+
+
+def safe_invoke_with_tools(prompt: str, tools: list):
+    """带重试的原生 Function Calling 调用。
+
+    Args:
+        prompt: 决策提示词
+        tools: langchain @tool 装饰的工具列表
+
+    Returns:
+        AIMessage（通过 .tool_calls 读取调用决策）；全部重试失败时返回 None
+    """
+    last_error = None
+    for attempt in range(1, config.LLM_MAX_RETRIES + 1):
+        start = time.perf_counter()
+        try:
+            result = llm.bind_tools(tools).invoke(prompt)
+            _record_usage(result, (time.perf_counter() - start) * 1000)
+            return result
+        except Exception as e:
+            last_error = e
+            metrics.record_llm_call((time.perf_counter() - start) * 1000, error=True)
+            logger.warning(
+                "[LLM] 第 %d/%d 次工具调用失败：%s", attempt, config.LLM_MAX_RETRIES, e
+            )
+            if attempt < config.LLM_MAX_RETRIES:
+                time.sleep(2 ** (attempt - 1))
+    logger.error("[LLM] 工具调用全部重试失败。最后错误：%s", last_error)
+    return None
