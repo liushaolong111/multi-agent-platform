@@ -36,6 +36,18 @@ RAG_TOP_K = int(os.getenv("RAG_TOP_K", "3"))
 # ---- 工作流 ----
 MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "3"))
 
+# ---- 可观测性（LangSmith 链路追踪）----
+# langchain 会自动读取以下环境变量，这里仅做显式化与状态查询
+LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING", "").lower() == "true"
+LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY", "")
+LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "multi-agent-platform")
+
+# ---- API 安全 ----
+# 设置后，/chat 与 /chat/stream 需要请求头 X-API-Key 匹配；留空则不鉴权（本地开发友好）
+API_KEY = os.getenv("API_KEY", "")
+# 限流：单 IP 每分钟最多请求次数
+RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "10"))
+
 # ---- 合法的任务类型枚举（用于 router 输出校验）----
 VALID_TASK_TYPES = {"data_analysis", "report_generation", "knowledge_query"}
 
