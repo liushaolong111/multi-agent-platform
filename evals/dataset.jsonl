@@ -1,0 +1,20 @@
+{"id": 1, "question": "Q1 2026 的总销售额是多少？", "category": "data_analysis", "expected_any": ["10,604,477", "1060.4", "1060万"]}
+{"id": 2, "question": "Q1 销售额环比 Q4 2025 增长了多少？", "category": "data_analysis", "expected_any": ["11.3%"]}
+{"id": 3, "question": "Q1 销售额最高的产品是哪个？", "category": "data_analysis", "expected_any": ["星辰财务"]}
+{"id": 4, "question": "星辰财务的销售额占比是多少？", "category": "data_analysis", "expected_any": ["50.8%"]}
+{"id": 5, "question": "Q1 销售额最高的区域是哪里？", "category": "data_analysis", "expected_any": ["华东"]}
+{"id": 6, "question": "华东区域的销售额占比是多少？", "category": "data_analysis", "expected_any": ["40.8%"]}
+{"id": 7, "question": "哪个区域哪款产品贡献最大？", "category": "data_analysis", "expected_all": ["华东", "星辰财务"]}
+{"id": 8, "question": "Q1 哪个月份的销售额最高？", "category": "data_analysis", "expected_any": ["2026-01", "1月", "一月"]}
+{"id": 9, "question": "Q4 2025 的总销售额是多少？", "category": "data_analysis", "expected_any": ["9,527,929", "952.8"]}
+{"id": 10, "question": "Q1 总销量是多少件？", "category": "data_analysis", "expected_any": ["477"]}
+{"id": 11, "question": "客户平均评分是多少？", "category": "feedback", "expected_any": ["3.64"]}
+{"id": 12, "question": "客户好评率是多少？", "category": "feedback", "expected_any": ["60%"]}
+{"id": 13, "question": "反馈数量最多的问题类型是什么？", "category": "feedback", "expected_any": ["价格"]}
+{"id": 14, "question": "平均评分最低的问题类型是什么？", "category": "feedback", "expected_any": ["系统稳定性"]}
+{"id": 15, "question": "系统稳定性问题的平均评分是多少？", "category": "feedback", "expected_any": ["2.5"]}
+{"id": 16, "question": "星辰CRM 企业版的价格是多少？", "category": "knowledge_query", "expected_any": ["8999"]}
+{"id": 17, "question": "星辰HR 面向多大规模的企业？", "category": "knowledge_query", "expected_any": ["50-500", "50 到 500", "50~500"]}
+{"id": 18, "question": "星辰财务有哪些竞争优势？", "category": "knowledge_query", "expected_any": ["智能凭证", "多币种", "银行"]}
+{"id": 19, "question": "Q1 的净利润是多少？", "category": "knowledge_query", "expected_any": ["320"]}
+{"id": 20, "question": "研发投入占总成本的比例是多少？", "category": "knowledge_query", "expected_any": ["41.7%"]}
