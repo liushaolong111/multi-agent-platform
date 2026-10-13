@@ -13,18 +13,27 @@ from langchain_community.vectorstores import FAISS
 import config
 from graph.llm import safe_invoke
 from graph.state import AgentState
-from memory.short_term import get_session, update_session
 from memory.long_term import get_long_term
+from memory.short_term import get_session, update_session
 
 logger = logging.getLogger(__name__)
 
-# 全局加载一次向量库
-embeddings = HuggingFaceEmbeddings(model_name=config.EMBEDDING_MODEL)
-vectorstore = FAISS.load_local(
-    config.FAISS_INDEX_DIR,
-    embeddings,
-    allow_dangerous_deserialization=True,
-)
+# 向量库懒加载：首次使用时才加载 embedding 模型和 FAISS 索引。
+# 避免 import 时下载模型/读取索引，加快服务启动，也让测试可以完全 mock。
+_vectorstore = None
+
+
+def get_vectorstore():
+    """获取 FAISS 向量库单例，首次调用时初始化。"""
+    global _vectorstore
+    if _vectorstore is None:
+        embeddings = HuggingFaceEmbeddings(model_name=config.EMBEDDING_MODEL)
+        _vectorstore = FAISS.load_local(
+            config.FAISS_INDEX_DIR,
+            embeddings,
+            allow_dangerous_deserialization=True,
+        )
+    return _vectorstore
 
 
 @lru_cache(maxsize=1)
@@ -120,7 +129,6 @@ def compute_feedback_stats() -> str:
             return ""
 
         ratings = [int(r[1]) for r in rows]
-        types = [r[2].strip() for r in rows]
         avg_rating = sum(ratings) / len(ratings)
 
         # 评分分布
@@ -192,7 +200,7 @@ def skill_node(state: AgentState) -> dict:
     sub_answers = []
     last_docs_preview = ""
     for task in plan:
-        docs = vectorstore.similarity_search(task, k=config.RAG_TOP_K)
+        docs = get_vectorstore().similarity_search(task, k=config.RAG_TOP_K)
         rag_context = "\n\n".join([d.page_content for d in docs])
         last_docs_preview = rag_context[:500]
 
@@ -216,10 +224,11 @@ def skill_node(state: AgentState) -> dict:
 【当前子任务】
 {task}
 
-【要求】
-- **优先使用"精确统计数据"里的数字**，不要自己算
-- 直接给出具体结论和数字，不要罗列"统计维度"
-- 用简洁的中文回答，200字以内
+【输出要求】
+- **只引用数字，不要原样复制"精确统计数据"整块内容**，更不要输出"区域×产品交叉表"
+- 直接给出具体结论和数字，用 **加粗** 标重点数字
+- 结构清晰：先给结论，再用 - 列表补充关键维度（产品/区域/趋势）
+- 用简洁的中文回答，300 字以内
 - 如果数据中确实没有相关信息，明确说明"""
 
         result = safe_invoke(prompt, fallback="（该子任务处理失败，请稍后重试）")
