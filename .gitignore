@@ -10,3 +10,6 @@ postgres_data/
 .idea/
 faiss_index/
 .docker/
+dump.rdb
+*.db
+evals/report.json
