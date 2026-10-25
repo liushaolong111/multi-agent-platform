@@ -18,3 +18,6 @@ httpx==0.28.1
 pandas==2.2.3
 pytest==9.1.1
 slowapi==0.1.9
+PyJWT==2.10.1
+qdrant-client==1.12.1
+structlog==26.1.0

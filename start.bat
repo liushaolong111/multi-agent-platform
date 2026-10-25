@@ -16,4 +16,4 @@ echo   - 健康检查: http://localhost:8000/health
 echo.
 echo   按 Ctrl+C 停止服务
 echo ============================================
-.venv\Scripts\python.exe -m uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+.venv\Scripts\python.exe -m uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload

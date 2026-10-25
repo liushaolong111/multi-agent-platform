@@ -4,14 +4,16 @@
 1. 关键词匹配（默认）：标准答案中的关键数字/结论必须出现在回答中，规则确定、零成本
 2. LLM-as-judge（--judge 开启）：让 LLM 语义判断回答是否正确，覆盖关键词匹配不到的表述
 
-运行方式（需要 DEEPSEEK_API_KEY 和已构建的 FAISS 索引，不进 CI）：
+运行方式（需要 DEEPSEEK_API_KEY 和已构建的 FAISS 索引）：
     .venv/Scripts/python.exe evals/run_eval.py                # 关键词评分
     .venv/Scripts/python.exe evals/run_eval.py --judge        # 关键词 + LLM 评委
     .venv/Scripts/python.exe evals/run_eval.py --limit 5      # 只跑前 5 题（快速冒烟）
+    .venv/Scripts/python.exe evals/run_eval.py --gate 0.8     # 正确率 < 80% 时退出码 1（CI 门禁）
 
 输出：控制台报告 + evals/report.json（可用于对比历次改动前后的效果回归）
 """
 import argparse
+import asyncio
 import json
 import logging
 import os
@@ -21,9 +23,9 @@ import time
 # 确保项目根目录在 sys.path 中
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import config  # noqa: E402
-from graph.llm import safe_invoke  # noqa: E402
-from graph.service import graph  # noqa: E402
+from app.agent.llm import safe_invoke  # noqa: E402
+from app.agent.service import graph  # noqa: E402
+from app.conf import config  # noqa: E402
 
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("eval")
@@ -66,12 +68,12 @@ def llm_judge_score(item: dict, answer: str) -> bool:
     return "CORRECT" in raw.upper() and "WRONG" not in raw.upper()
 
 
-def run_eval(dataset: list, use_judge: bool) -> dict:
+async def run_eval(dataset: list, use_judge: bool) -> dict:
     results = []
     for i, item in enumerate(dataset, 1):
         start = time.perf_counter()
         try:
-            state = graph.invoke(
+            state = await graph.ainvoke(
                 {
                     "user_input": item["question"],
                     "messages": [],
@@ -79,7 +81,9 @@ def run_eval(dataset: list, use_judge: bool) -> dict:
                     "iteration": 0,
                     "session_id": f"eval_{item['id']}",
                     "user_id": "eval_user",
-                }
+                },
+                # checkpointer 要求 thread_id；每题独立线程互不污染
+                config={"configurable": {"thread_id": f"eval_{item['id']}"}},
             )
             answer = state.get("final_answer") or state.get("tool_result", "")
         except Exception as e:
@@ -131,6 +135,12 @@ def main():
     parser.add_argument("--limit", type=int, default=0, help="只跑前 N 题")
     parser.add_argument("--dataset", default=DATASET_PATH, help="评测集路径")
     parser.add_argument("--output", default=REPORT_PATH, help="报告输出路径")
+    parser.add_argument(
+        "--gate",
+        type=float,
+        default=0.0,
+        help="正确率门禁（0~1），低于阈值退出码 1（CI 回归用）",
+    )
     args = parser.parse_args()
 
     if config.check_llm_config():
@@ -143,17 +153,24 @@ def main():
 
     print(f"开始评测：{len(dataset)} 题（LLM-as-judge：{'开' if args.judge else '关'}）\n")
     start = time.perf_counter()
-    report = run_eval(dataset, args.judge)
+    report = asyncio.run(run_eval(dataset, args.judge))
     report["elapsed_s"] = round(time.perf_counter() - start, 1)
 
+    accuracy = report["overall"]["accuracy"]
     print(f"\n总体正确率：{report['overall']['pass']}/{report['overall']['total']}"
-          f" = {report['overall']['accuracy'] * 100:.1f}%")
+          f" = {accuracy * 100:.1f}%")
     for cat, stat in report["by_category"].items():
         print(f"  - {cat}: {stat['pass']}/{stat['total']} = {stat['accuracy'] * 100:.1f}%")
 
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
     print(f"\n报告已保存：{args.output}（耗时 {report['elapsed_s']}s）")
+
+    if args.gate and accuracy < args.gate:
+        print(f"❌ 门禁未通过：正确率 {accuracy:.3f} < 阈值 {args.gate}")
+        sys.exit(1)
+    if args.gate:
+        print(f"✅ 门禁通过：正确率 {accuracy:.3f} ≥ 阈值 {args.gate}")
 
 
 if __name__ == "__main__":

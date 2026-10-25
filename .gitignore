@@ -13,5 +13,7 @@ faiss_index/
 dump.rdb
 *.db
 evals/report.json
+# 数据采集增量缓存（运行时生成）
+data/.collect_state.json
 # 本地个人复盘文档，不入库
 docs/OPTIMIZATION.md

@@ -7,4 +7,4 @@ if __name__ == "__main__":
     print("访问地址：http://localhost:8000/ui")
     print("API 文档：http://localhost:8000/docs")
     print("=" * 50)
-    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app.api.main:app", host="0.0.0.0", port=8000, reload=True)

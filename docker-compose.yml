@@ -4,6 +4,11 @@ services:
     container_name: app-redis
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   postgres:
@@ -15,7 +20,46 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-agent_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: app-qdrant
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # 一次性初始化：灌业务库种子数据 + 构建向量索引（docker compose --profile setup up seed）
+  seed:
+    build: .
+    container_name: app-seed
+    profiles: ["setup"]
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-agent}:${POSTGRES_PASSWORD:-agent123}@postgres:5432/${POSTGRES_DB:-agent_db}
+      BUSINESS_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-agent}:${POSTGRES_PASSWORD:-agent123}@postgres:5432/${POSTGRES_DB:-agent_db}
+      VECTOR_STORE: qdrant
+      QDRANT_URL: http://qdrant:6333
+      HF_ENDPOINT: https://hf-mirror.com
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./faiss_index:/app/faiss_index
+    command: >
+      sh -c "python app/script/seed_business_db.py && python app/script/ingest.py"
 
   api:
     build: .
@@ -27,15 +71,32 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-agent}:${POSTGRES_PASSWORD:-agent123}@postgres:5432/${POSTGRES_DB:-agent_db}
+      BUSINESS_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-agent}:${POSTGRES_PASSWORD:-agent123}@postgres:5432/${POSTGRES_DB:-agent_db}
+      VECTOR_STORE: qdrant
+      QDRANT_URL: http://qdrant:6333
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      APPROVAL_MODE: ${APPROVAL_MODE:-false}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key-32bytes-change-in-prod!}
+      LOG_FORMAT: json
       HF_ENDPOINT: https://hf-mirror.com
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
     volumes:
       - ./faiss_index:/app/faiss_index
       - ./data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/health',timeout=3)\" || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
 volumes:
   redis_data:
   postgres_data:
+  qdrant_data:
