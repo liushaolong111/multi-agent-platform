@@ -53,6 +53,17 @@ PROJECTS = [
 COST_CATEGORIES = ["材料", "人工", "机械", "分包"]
 # 各成本类别占合同金额的大致比例
 CATEGORY_RATIO = {"材料": 0.42, "人工": 0.25, "机械": 0.12, "分包": 0.21}
+# 项目级目标预算执行率（实际成本 / 预算）：制造真实的黄/橙/红超支样本，覆盖多个区域。
+# 红≥115% / 橙110-115% / 黄105-110%；未列出的项目执行率 <100%（预算有结余）。
+PROJECT_COST_RATE = {
+    "BY-HN-001": 1.18,  # 深圳前海金融大厦（华南）🔴
+    "BY-HB-003": 1.17,  # 北京城市副中心（华北）🔴
+    "BY-XN-002": 1.13,  # 重庆江北嘴（西南）🟠
+    "BY-HD-002": 1.12,  # 杭州萧山科技城（华东）🟠
+    "BY-HZ-001": 1.08,  # 武汉光谷（华中）🟡
+    "BY-HD-004": 1.07,  # 苏州工业园生物医药（华东）🟡
+    "BY-XB-001": 1.06,  # 西安国际港务区（西北）🟡
+}
 MONTHS = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06",
           "2026-07", "2026-08", "2026-09", "2026-10", "2026-11", "2026-12"]
 # 月度进度系数（前低后高再收尾，模拟施工进度曲线，12 个月之和≈1）
@@ -108,12 +119,19 @@ def gen_costs():
             months = [m for m in MONTHS if m <= end_month]
         else:  # 停工
             months = [m for m in MONTHS if m <= "2026-03"]
+        # 项目级目标执行率：命中则按 budget = amount / rate 反推预算，制造真实超支样本
+        target_rate = PROJECT_COST_RATE.get(code)
         for mi, month in enumerate(months):
             progress = MONTH_PROGRESS[mi] if mi < len(MONTH_PROGRESS) else 0.08
             monthly_total = contract * progress * random.uniform(0.85, 1.15)
             for cat in COST_CATEGORIES:
                 amount = monthly_total * CATEGORY_RATIO[cat] * random.uniform(0.90, 1.10)
-                budget = amount * random.uniform(1.02, 1.12)  # 预算略高于实际
+                if target_rate is not None:
+                    # ±0.4pp 小扰动：单行不跨预警级，项目内 48 行聚合后执行率收敛到目标值
+                    rate = target_rate * random.uniform(0.996, 1.004)
+                    budget = amount / rate
+                else:
+                    budget = amount * random.uniform(1.02, 1.12)  # 预算略高于实际
                 rows.append([code, name, region, month, cat, round(amount, 2), round(budget, 2)])
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
