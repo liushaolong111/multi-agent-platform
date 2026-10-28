@@ -1,18 +1,18 @@
-{"id": 1, "question": "2026 年上半年所有项目的实际成本合计是多少？", "category": "data_analysis", "expected_any": ["197,664,220", "1.98 亿", "19766.4"]}
-{"id": 2, "question": "2026 年上半年成本最高的项目是哪个？", "category": "data_analysis", "expected_any": ["深圳前海金融大厦项目"]}
-{"id": 3, "question": "深圳前海金融大厦项目 2026 年上半年的成本是多少？", "category": "data_analysis", "expected_any": ["56,784,000", "5,678.4", "5678.4"]}
+{"id": 1, "question": "2026 年上半年所有项目的实际成本合计是多少？", "category": "data_analysis", "expected_any": ["4,524,731", "45.25 亿", "45.2 亿", "452473"]}
+{"id": 2, "question": "2026 年上半年成本最高的项目是哪个？", "category": "data_analysis", "expected_any": ["厦门翔安新机场航站楼项目"]}
+{"id": 3, "question": "深圳前海金融大厦项目 2026 年上半年的成本是多少？", "category": "data_analysis", "expected_any": ["430,577", "4.31 亿", "4.3 亿"]}
 {"id": 4, "question": "哪个成本类别的金额占比最高？", "category": "data_analysis", "expected_any": ["材料"]}
-{"id": 5, "question": "材料成本占总成本的比例是多少？", "category": "data_analysis", "expected_any": ["42%", "42.0"]}
+{"id": 5, "question": "材料成本占总成本的比例是多少？", "category": "data_analysis", "expected_any": ["42.1", "42%"]}
 {"id": 6, "question": "哪个区域的实际成本最高？", "category": "data_analysis", "expected_any": ["华南"]}
-{"id": 7, "question": "华南区域的实际成本是多少？", "category": "data_analysis", "expected_any": ["77,064,000", "7,706.4", "7706.4"]}
-{"id": 8, "question": "2026 年上半年哪个月份的总成本最高？", "category": "data_analysis", "expected_any": ["2026-05", "5 月", "五月"]}
-{"id": 9, "question": "目前有几个项目处于在建状态？", "category": "data_analysis", "expected_any": ["5 个", "5个", "5 个项目"]}
-{"id": 10, "question": "2026 年上半年整体预算执行率是多少？", "category": "data_analysis", "expected_any": ["96.1%", "96.10%"]}
-{"id": 11, "question": "哪个项目预算超支最严重？", "category": "data_analysis", "expected_any": ["天津滨海新区地下管廊项目"]}
-{"id": 12, "question": "质量安全问题中，安全类问题共有多少条？", "category": "safety", "expected_any": ["18 条", "18条"]}
-{"id": 13, "question": "质量类问题共有多少条？", "category": "safety", "expected_any": ["12 条", "12条"]}
-{"id": 14, "question": "质量安全问题的闭环率是多少？", "category": "safety", "expected_any": ["63.3%", "63.33%"]}
-{"id": 15, "question": "严重程度为重大的隐患有几项？", "category": "safety", "expected_any": ["8 项", "8项", "8 条", "8条"]}
+{"id": 7, "question": "华南区域的实际成本是多少？", "category": "data_analysis", "expected_any": ["1,356,155", "13.56 亿", "13.6 亿"]}
+{"id": 8, "question": "2026 年总成本最高的月份是哪个月？", "category": "data_analysis", "expected_any": ["2026-09", "9 月", "九月"]}
+{"id": 9, "question": "目前有几个项目处于在建状态？", "category": "data_analysis", "expected_any": ["15 个", "15个", "15 个项目"]}
+{"id": 10, "question": "2026 年上半年整体预算执行率是多少？", "category": "data_analysis", "expected_any": ["101.9", "101.90"]}
+{"id": 11, "question": "哪个项目预算超支最严重？", "category": "data_analysis", "expected_any": ["深圳前海金融大厦项目"]}
+{"id": 12, "question": "质量安全问题中，安全类问题共有多少条？", "category": "safety", "expected_any": ["51 条", "51条"]}
+{"id": 13, "question": "质量类问题共有多少条？", "category": "safety", "expected_any": ["37 条", "37条"]}
+{"id": 14, "question": "质量安全问题的闭环率是多少？", "category": "safety", "expected_any": ["65.9", "65.91"]}
+{"id": 15, "question": "严重程度为重大的隐患有几项？", "category": "safety", "expected_any": ["28 项", "28项", "28 条", "28条"]}
 {"id": 16, "question": "哪个区域的质量安全问题最多？", "category": "safety", "expected_any": ["华东"]}
 {"id": 17, "question": "项目成本累计超支达到合同金额多少时需要向区域公司提交书面说明？", "category": "knowledge_query", "expected_any": ["5%", "5 %"]}
 {"id": 18, "question": "一般隐患的整改期限是多久？", "category": "knowledge_query", "expected_any": ["3 日", "3日", "3 天", "3天"]}

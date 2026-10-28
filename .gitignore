@@ -13,6 +13,8 @@ faiss_index/
 dump.rdb
 *.db
 evals/report.json
+.coverage
+htmlcov/
 # 数据采集增量缓存（运行时生成）
 data/.collect_state.json
 # 业务库同步生成的摘要（运行时生成，由 sync_business_to_rag.py 重建）

@@ -229,6 +229,22 @@ def _node_summary(node_name: str, node_output: dict) -> tuple[str, str]:
         task_count = result.count("【") if result else 0
         return "分析", f"已完成知识检索与分析（{task_count} 个子任务）"
 
+    if node_name == "experts":
+        analyses = node_output.get("expert_analyses") or {}
+        names = {"cost": "成本", "safety": "安全", "material": "材料"}
+        done = [
+            f"{names.get(k, k)} {len(v)} 字"
+            for k, v in analyses.items()
+            if v
+        ]
+        if not done:
+            return "专家", "三领域专家分析不可用（已跳过，用初步结果兜底）"
+        return "专家", "三领域专家并行分析完成：" + "、".join(done)
+
+    if node_name == "coordinator":
+        answer = _clean(node_output.get("coordinated_answer", ""))
+        return "协调", f"跨域聚合完成，综合回答 {len(answer)} 字（结果已写回供 ReAct / Reviewer 使用）"
+
     if node_name == "tool_decide":
         pending = node_output.get("pending_tool_calls") or []
         if pending:
@@ -324,7 +340,7 @@ async def ui():
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<title>多智能体助手</title>
+<title>智建 Agent · 工程多智能体分析平台</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -372,6 +388,9 @@ async def ui():
   .node-tag.skill { background: #e3f2fd; color: #1565c0; }
   .node-tag.tool { background: #f3e5f5; color: #7b1fa2; }
   .node-tag.reviewer { background: #e8f5e9; color: #2e7d32; }
+  .node-tag.experts { background: #fce4ec; color: #ad1457; }
+  .node-tag.coordinator { background: #ede7f6; color: #5e35b1; }
+  .node-tag.tool_decide, .node-tag.tool_exec { background: #f3e5f5; color: #7b1fa2; }
   .node-content { flex: 1; white-space: pre-wrap; line-height: 1.6; color: #333; word-break: break-word; }
 
   /* 最终回答 */
@@ -401,10 +420,28 @@ async def ui():
     overflow-x: auto; font-size: 12.5px;
   }
   .label { font-size: 12px; color: #4e83fd; font-weight: 600; margin-bottom: 8px; }
+
+  /* 三级预警徽章：把回答里的"红色预警/橙色预警/黄色预警/正常"渲染成彩色标签 */
+  .alert-badge {
+    display: inline-block; padding: 1px 8px; border-radius: 10px;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+  }
+  .alert-red { background: #fdecea; color: #c62828; border: 1px solid #f5c2c0; }
+  .alert-orange { background: #fff3e0; color: #e65100; border: 1px solid #ffd8a8; }
+  .alert-yellow { background: #fffbe6; color: #8a6d00; border: 1px solid #ffe58f; }
+  .alert-ok { background: #e8f5e9; color: #2e7d32; border: 1px solid #c3e6c8; }
+
+  /* 一键演示问题 */
+  .quick-ask { display: flex; gap: 8px; flex-wrap: wrap; margin: -8px 0 20px; }
+  .quick-ask span {
+    font-size: 12.5px; padding: 5px 12px; cursor: pointer;
+    background: white; border: 1px solid #e4e6eb; border-radius: 14px; color: #4e83fd;
+  }
+  .quick-ask span:hover { border-color: #4e83fd; background: #f5f8ff; }
 </style>
 </head>
 <body>
-  <h1>🤖 多智能体协作平台</h1>
+  <h1>🏗️ 智建 Agent · 工程多智能体分析平台</h1>
   <div class="login-row">
     <input id="username" value="admin" placeholder="用户名" />
     <input id="password" type="password" value="admin123" placeholder="密码" />
@@ -417,6 +454,11 @@ async def ui():
   <div class="input-row">
     <input id="msg" placeholder="输入任务，例如：分析 2026 年上半年项目成本" value="分析 2026 年上半年项目成本" />
     <button id="send">发送</button>
+  </div>
+  <div class="quick-ask">
+    <span data-q="分析 2026 年上半年项目成本，哪些项目触发了预算超支预警？">💰 成本三级预警</span>
+    <span data-q="目前有哪些重大且未闭环的安全质量问题，分布在哪些项目？">🚨 重大隐患未闭环</span>
+    <span data-q="材料到货有没有滞后？哪些项目和供应商风险最高？">📦 材料到货滞后</span>
   </div>
 
   <h3>执行过程</h3>
@@ -482,6 +524,14 @@ async def ui():
         usernameInput.value = el.dataset.u;
         passwordInput.value = el.dataset.p;
         loginBtn.click();
+      };
+    });
+
+    // 一键演示问题：填入输入框并直接发送
+    document.querySelectorAll('.quick-ask span').forEach(el => {
+      el.onclick = () => {
+        msgInput.value = el.dataset.q;
+        sendBtn.click();
       };
     });
 
@@ -551,6 +601,14 @@ async def ui():
         table += '</table>';
         return table;
       });
+      // 三级预警 → 彩色徽章，兼容"🔴红色预警"与"🔴红色2个"两种表述
+      html = html.replace(/🔴\\s*红色预警/g, '<span class="alert-badge alert-red">🔴 红色预警</span>');
+      html = html.replace(/🟠\\s*橙色预警/g, '<span class="alert-badge alert-orange">🟠 橙色预警</span>');
+      html = html.replace(/🟡\\s*黄色预警/g, '<span class="alert-badge alert-yellow">🟡 黄色预警</span>');
+      html = html.replace(/🔴\\s*红色(?!预警)/g, '<span class="alert-badge alert-red">🔴 红色</span>');
+      html = html.replace(/🟠\\s*橙色(?!预警)/g, '<span class="alert-badge alert-orange">🟠 橙色</span>');
+      html = html.replace(/🟡\\s*黄色(?!预警)/g, '<span class="alert-badge alert-yellow">🟡 黄色</span>');
+      html = html.replace(/✅\\s*正常/g, '<span class="alert-badge alert-ok">✅ 正常</span>');
       // 普通换行
       html = html.replace(/\\n/g, '<br>');
       // 2. 把图表占位符替换回原始 SVG

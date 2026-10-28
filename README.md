@@ -17,6 +17,7 @@
 - **RAG 检索增强**：FAISS / Qdrant 双后端（工厂模式，Qdrant 不可达自动降级 FAISS），bge-small-zh 本地向量化，检索按 metadata 过滤
 - **双层记忆**：Redis 短期记忆（会话上下文）+ SQLAlchemy 长期记忆（PostgreSQL/SQLite 可配置，跨会话历史）
 - **原生 Function Calling**：工具决策走 DeepSeek `bind_tools`，结构化决策，免除 prompt 拼 JSON 再解析
+- **MCP 工具总线**：`app/mcp/server.py` 用官方 MCP SDK 暴露 7 个工具（SQL 查询 / 材料查询 / 向量检索 / ERP 采购单 / 库存 / 进度 / schema），`client.py` 把它们桥接成 LangChain 工具挂进 Agent——工具实现可独立部署、被任意 MCP 客户端复用，`ENABLE_MCP_TOOLS=true` 一键开启
 - **结构化日志**：structlog + contextvars——请求入口绑定 `request_id / session_id / user_id`，整条链路（含第三方库）日志自动携带，`LOG_FORMAT=json` 可被日志系统直接采集
 - **LLM 全链路异步化**：Skill 的多子任务 `asyncio.gather` 并发，延迟从 N×T 降到 ≈1×T
 - **可量化效果 + CI 门禁**：20 题评测集（关键词评分 + LLM-as-judge），评估脚本支持 `--gate`，正确率低于阈值直接让 CI 失败
@@ -24,6 +25,7 @@
 - **流式输出**：SSE 逐节点推送，用户实时看到 AI 的思考过程
 - **Docker 化部署**：`docker compose` 一条命令启动 5 服务（api / redis / postgres / qdrant + seed 初始化）
 - **多维数据分析**：支持项目成本排名、区域×成本类别交叉表、月度趋势、预算执行率、质量安全问题闭环率
+- **三级预警体系**：成本按项目聚合执行率（≥105% 🟡 / ≥110% 🟠 / ≥115% 🔴）、安全按严重程度与超期天数、材料按到货滞后天数三个口径统一分级；阈值集中在 `skill.py` 顶部常量，UI 自动渲染成彩色徽章
 
 ## 🏗️ 架构设计
 
@@ -46,6 +48,17 @@
           │  Redis 短期记忆 + RAG 检索（FAISS / Qdrant）     │
           │  + 预计算精确统计 / Text-to-SQL（按角色过滤）    │
           │  └──── asyncio.gather 并发调用 DeepSeek ────┘   │
+          └────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+          ┌────────────────────────────────────────────────┐
+          │  Experts：成本 / 安全 / 材料 三领域专家并行分析  │
+          │  （asyncio.gather，延迟 ≈ 1×LLM）               │
+          └────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+          ┌────────────────────────────────────────────────┐
+          │  Coordinator：跨域聚合，消解结论冲突与重复       │
           └────────────────────────────────────────────────┘
                                   │
                                   ▼
@@ -92,6 +105,7 @@
 | 业务数据 | **MySQL / PostgreSQL + Text-to-SQL** | LLM 生成 SQL 查真实业务表（项目/成本/安全问题），三层只读防护 + 执行前静态越权校验 |
 | 认证 / 权限 | **PyJWT + RBAC** | HS256 token；PBKDF2-HMAC-SHA256 密码哈希；三角色行级数据隔离 |
 | 工具调用 | **原生 Function Calling** | DeepSeek `bind_tools`，结构化决策、免除 JSON 解析兜底 |
+| 工具总线 | **MCP（Model Context Protocol）** | `app/mcp/server.py` 以 MCP Server 暴露 7 个工具；`client.py` 桥接成 LangChain StructuredTool，`ENABLE_MCP_TOOLS=true` 即挂载，工具实现与 Agent 解耦 |
 | 结构化日志 | **structlog** | 与 stdlib 桥接，contextvars 全链路追踪，`LOG_FORMAT=json` 可直接采集 |
 | 链路追踪 | **LangSmith**（可选） | 环境变量开启，全链路 span + token 消耗可视化 |
 | 后端框架 | **FastAPI** | 异步高性能 HTTP 服务，slowapi 限流 + 可选 API Key 鉴权 |
@@ -120,7 +134,8 @@ echo "DEEPSEEK_API_KEY=sk-你的真实key" > .env
 # 3. 启动服务（api / redis / postgres / qdrant）
 docker compose up -d --build
 
-# 4. 首次初始化：灌业务库种子数据 + 构建向量索引
+# 4. 首次初始化：灌业务库种子数据 → 生成业务摘要 → 重建向量索引
+#    （sync_business_to_rag.py 内部会调用 ingest.build_index，保证 RAG 摘要与业务库数字同源）
 docker compose --profile setup up seed
 
 # 5. 访问 Web UI
@@ -172,26 +187,28 @@ docker compose logs -f api # 实时查看日志
 [人工审批]  已批准放行                ← APPROVAL_MODE=true 时出现（否则直接执行）
 [工具执行]  第 1 轮：执行了 1 个工具调用
 [工具决策]  无需额外工具调用（ReAct 收敛）
-[审核通过]  2026 上半年总成本 197,664,220 元 ...
+[审核通过]  2026 上半年总成本 4,524,731,515 元 ...
 ```
 
-登录身份会决定数据可见范围：用 `manager_hd` 登录后问"各区域成本"，答案只包含**华东**；换 `admin` 登录则可见全部四区域。
+登录身份会决定数据可见范围：用 `manager_hd` 登录后问"各区域成本"，答案只包含**华东**；换 `admin` 登录则可见全部六大区域。
 
 ### 实际回答示例
 
 **问**：2026 年上半年项目成本整体情况如何？哪个区域最高？
 
 **答**：
-> 2026 上半年实际成本合计 **197,664,220 元**，预算 **205,690,920 元**，整体预算执行率 **96.1%**。
+> 2026 上半年实际成本合计 **4,524,731,515 元**，预算 **4,440,467,571 元**，整体预算执行率 **101.90%**。
 >
-> 成本最高的区域是**华南**（77,064,000 元，占比 39.0%），其中**深圳前海金融大厦项目**以 56,784,000 元居各项目之首；成本类别中**材料**占比最高（42.0%）。
+> 成本最高的区域是**华南**（1,356,155,241 元，占比 30.0%），其中**厦门翔安新机场航站楼项目**以 572,433,499 元居各项目之首；成本类别中**材料**占比最高（42.1%）。
+>
+> 项目级预警：**深圳前海金融大厦（118.1%）**、**北京城市副中心（117.0%）** 已达红色预警，**重庆江北嘴（112.9%）**、**杭州萧山科技城（112.1%）** 为橙色，武汉光谷、苏州工业园区、西安国际港务区（108.0% / 107.0% / 106.0%）为黄色——7 个项目需重点关注，其余 13 个项目执行率 92.5%–95.4% 处于受控区间。
 
 **问**：质量安全问题整改情况怎么样？最需要关注什么？
 
 **答**：
-> 共记录质量安全问题 **30 条**（安全 18 条、质量 12 条），已闭环 **19 条**，闭环率 **63.3%**。
+> 共记录质量安全问题 **88 条**（安全 51 条、质量 37 条），已闭环 **58 条**，闭环率 **65.91%**。
 >
-> 其中**重大隐患 8 条**，按制度要求应立即停工并 24 小时内上报区域公司；当前闭环率低于管理目标 95%，建议优先清理待整改项并按项目复盘重复问题。
+> 其中**重大隐患 28 条**，仍有 **4 条未闭环**（深圳前海脚手架连墙件、重庆江北嘴钢结构焊缝探伤、武汉光谷有限空间气体检测、武汉光谷焊缝探伤），按制度要求应立即停工并 24 小时内上报区域公司；当前闭环率低于管理目标 95%，建议优先清理待整改项并按项目复盘重复问题。
 
 ### API 接口
 
@@ -231,7 +248,7 @@ API 文档：`http://localhost:8000/docs`
 # 第一轮
 curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
   -d '{"message": "2026 年上半年成本最高的项目是哪个？", "session_id": "demo1"}'
-# → 深圳前海金融大厦项目（56,784,000 元）
+# → 厦门翔安新机场航站楼项目（572,433,499 元）
 
 # 第二轮（"它"指代第一轮结论，短期记忆提供上下文）
 curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
@@ -337,6 +354,8 @@ multi-agent-platform/
 │   │       ├── router.py       # 任务分类（带枚举校验）
 │   │       ├── planner.py      # 任务拆解（JSON 解析兜底）
 │   │       ├── skill.py        # RAG 检索 + 精确统计 + 子任务并发（asyncio.gather）
+│   │       ├── experts.py      # 三领域专家（成本/安全/材料）并行分析
+│   │       ├── coordinator.py  # 专家结论聚合、冲突消解
 │   │       ├── tool_decide.py  # ReAct 决策：原生 Function Calling
 │   │       ├── tool_exec.py    # ReAct 执行：执行工具 + 观测回喂
 │   │       ├── approval.py     # HITL：interrupt 挂起 / resume 放行
@@ -346,6 +365,9 @@ multi-agent-platform/
 │   ├── client/                 # 外部客户端
 │   │   ├── short_term.py       # Redis 短期记忆（不可达时降级进程内存储）
 │   │   └── vectorstore.py      # FAISS / Qdrant 工厂 + 统一过滤检索入口
+│   ├── mcp/                    # MCP 工具总线
+│   │   ├── server.py           # MCP Server：7 个工具（SQL / 材料 / 向量 / ERP 三类 / schema）
+│   │   └── client.py           # MCP → LangChain StructuredTool 桥接
 │   ├── conf/
 │   │   └── config.py           # 统一配置管理
 │   ├── model/                  # ORM 模型层（表映射）
@@ -361,6 +383,7 @@ multi-agent-platform/
 │   │   └── collect.py          # 外部数据源采集（工厂模式 + 增量缓存 + 失败降级）
 │   ├── script/                 # 脚本层
 │   │   ├── ingest.py           # 向量化入库脚本（含 visibility metadata）
+│   │   ├── generate_demo_data.py # 演示数据生成（20 项目 / 784 成本 / 88 问题 / 76 材料）
 │   │   ├── seed_business_db.py # 业务库种子脚本（含三个演示账号）
 │   │   ├── sync_business_to_rag.py # 业务库 → 摘要 Markdown → 重建索引
 │   │   └── demo_tool_permissions.py# 一键演示 RBAC 在各数据出口的效果
@@ -387,9 +410,14 @@ multi-agent-platform/
 ```bash
 # 全部测试（hermetic：不需要 API Key / Redis / FAISS 索引，CI 直接可跑）
 pytest tests/ -q      # 29 passed
+
+# 带覆盖率
+pytest tests/ --cov=app --cov-report=term-missing
 ```
 
 测试覆盖：**29 个测试**——Router 分类、Planner 拆解、Skill 子任务并发、ReAct 决策/执行/条件边路由、HITL 审批、Text-to-SQL 只读防护与越权拦截、JWT 签发/篡改/过期、密码哈希、RBAC 行级隔离（作用域原语 / 检索过滤 / 工具出口）、向量库工厂降级、指标聚合、全链路端到端。
+
+**覆盖率（实测）**：整体 41%，但核心编排层远高于此——`service.py` 95%、`skill.py` 88%、`experts.py` 91%、`coordinator.py` 88%、`tool_exec.py` 89%、`reviewer.py` 100%。拉低整体的部分是需真实外部依赖的模块（`ingest.py` / `seed_business_db.py` 等脚本、`vectorstore.py` 需真 embedding 模型、`main.py` 的 SSE 与 UI），这些靠真实链路冒烟验证而非 mock 覆盖率。
 
 > 说明：节点模块通过 `from app.agent.llm import safe_invoke` 导入，因此测试 patch 的是各节点模块内的引用（如 `app.agent.nodes.skill.safe_ainvoke`）而非 `app.agent.llm` 本身——这是保证 mock 真正生效的关键。
 
@@ -403,7 +431,7 @@ LLM 擅长语言但不擅长算数。本项目用 **pandas 预先计算所有精
 
 单一 Prompt 存在两个问题：**容易产生幻觉**（LLM 编造数据）、**难以调试**（出错不知道是哪个环节）。
 
-拆成 7 个职责明确的节点后：
+拆成 9 个职责明确的节点后：
 - 每个节点可以独立测试、优化、替换
 - 出错时能精确定位（SSE 逐节点推送，一眼看到卡在哪）
 - 后续扩展新节点不影响现有流程
@@ -442,10 +470,19 @@ LLM 擅长语言但不擅长算数。本项目用 **pandas 预先计算所有精
 
 第一版把权限只加在 Text-to-SQL 的 SQL 上，演示时被真实数据打脸——同一份全公司数据还有**预计算统计、知识检索、工具、图表**四个出口在裸奔。**最弱的通道决定整体安全性**。第二版抽出单一判定 `scoped_region(role, region)`，五个出口共用；检索层强制走带过滤的统一入口（**绕过入口 = 绕过权限**）。
 
+### 10. 克制版多智能体：一轮并行 + 协调者，而不是全自主群聊
+
+全自主群聊（AutoGen 式"专家互相辩论"）演示好看，但不可控：轮次不封顶、结论互相污染、成本无法预估。本项目选的是**一轮并行分析 + 协调者聚合**：成本 / 安全 / 材料三个专家各带独立角色 prompt，只读自己领域的统计结果，`asyncio.gather` 并发（延迟 ≈ 1×LLM 调用）；Coordinator 只做跨域聚合与冲突消解，不引入新的对话轮次。**多智能体换来的是视角分工，不是对话熵增。**
+
+### 11. 三级预警：把"数字"变成"动作"
+
+预警不是给数据染色，而是把阈值固化成可执行的处置口径——成本按项目聚合执行率（≥105% 🟡 / ≥110% 🟠 / ≥115% 🔴）、安全按"严重程度 + 未闭环超期天数"、材料按"预计到货 − 计划使用"。三个口径的阈值集中在 `skill.py` 顶部常量，统计函数、Prompt 注入、UI 彩色徽章共用同一份定义：**改阈值只有一处，不会漏改某一层**。
+
 ## 📊 项目规模
 
-- 代码量：**36 个 Python 文件、约 3500 行**
-- 工作流节点：**7 个**（Router / Planner / Skill / ToolDecide / Approval / ToolExec / Reviewer）
+- 代码量：**67 个 Python 文件、约 5000 行**
+- 演示数据：**20 个项目 / 784 条成本流水 / 88 条质量问题 / 76 条材料库存**
+- 工作流节点：**9 个**（Router / Planner / Skill / Experts / Coordinator / ToolDecide / Approval / ToolExec / Reviewer）
 - 测试用例：**29 个**（pytest 全 mock、hermetic）+ **20 题**离线评测集
 - Docker 服务：**5 个**（api / redis / postgres / qdrant + seed 初始化）
 - 支持分析：项目成本排名、区域×成本类别交叉表、月度趋势、预算执行率、质量问题闭环率

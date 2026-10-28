@@ -59,7 +59,7 @@ services:
       - ./data:/app/data
       - ./faiss_index:/app/faiss_index
     command: >
-      sh -c "python app/script/seed_business_db.py && python app/script/ingest.py"
+      sh -c "python app/script/seed_business_db.py && python app/script/sync_business_to_rag.py"
 
   api:
     build: .

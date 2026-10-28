@@ -27,7 +27,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       # 测试全部 hermetic：节点级 mock，不需要 API Key / Redis / FAISS 索引
-      - run: pytest tests/ -v
+      - run: pytest tests/ -v --cov=app --cov-report=term-missing
 
   # 效果回归门禁：需要真实 LLM，只在配置了 DEEPSEEK_API_KEY secret 时运行。
   # 正确率低于阈值（0.8）时 job 失败，阻止合并——防止"改了 prompt/代码，效果悄悄退化"。

@@ -19,6 +19,22 @@ from app.service.permission import rag_scope_filter, scoped_region
 
 logger = logging.getLogger(__name__)
 
+# ---- 预警分级阈值：三域共用同一套口径，改这里即全局生效（PRD / README / UI 保持一致）----
+# 成本：预算执行率 ≥115% 红 / ≥110% 橙 / ≥105% 黄
+COST_ALERT_LEVELS = ((115, "🔴红色预警"), (110, "🟠橙色预警"), (105, "🟡黄色预警"))
+# 材料：到货滞后天数 >10 红 / 5-10 橙 / 1-5 黄
+MATERIAL_LAG_RED_DAYS, MATERIAL_LAG_ORANGE_DAYS = 10, 5
+# 安全：一般隐患未闭环超过 30 天转黄
+SAFETY_OVERDUE_DAYS = 30
+
+
+def _cost_alert_level(rate: float) -> str:
+    """按执行率返回成本预警等级标签，未超阈值返回 ✅正常。"""
+    for threshold, label in COST_ALERT_LEVELS:
+        if rate >= threshold:
+            return label
+    return "✅正常"
+
 # 检索一律走 app.client.vectorstore.similarity_search 统一入口——
 # 该入口支持 metadata_filter（Qdrant 原生过滤 / FAISS 召回后过滤），
 # 是 RBAC 在"知识检索"这条数据出口上的执行点。
@@ -74,15 +90,8 @@ def compute_stats(region: str | None = None) -> str:
             pct = amount / total_cost * 100
             proj_budget = int(df[df["项目名称"] == name]["预算金额"].sum())
             proj_rate = amount / proj_budget * 100 if proj_budget else 0
-            # 预警分级：超预算5%黄、10%橙、15%红
-            if proj_rate >= 115:
-                alert = "🔴红色预警"
-            elif proj_rate >= 110:
-                alert = "🟠橙色预警"
-            elif proj_rate >= 105:
-                alert = "🟡黄色预警"
-            else:
-                alert = "✅正常"
+            # 预警分级：超预算5%黄、10%橙、15%红（阈值见文件顶部 COST_ALERT_LEVELS）
+            alert = _cost_alert_level(proj_rate)
             stats += f"  - {name}：{int(amount):,} 元（占比 {pct:.1f}%，执行率 {proj_rate:.1f}% {alert}）\n"
 
         stats += "\n月度成本趋势：\n"
@@ -150,7 +159,7 @@ def compute_safety_stats(region: str | None = None) -> str:
             open_issues["发现日期"] = pd.to_datetime(open_issues["发现日期"]).dt.date
             yellow = open_issues[
                 (open_issues["严重程度"] == "一般")
-                & ((today - open_issues["发现日期"]).apply(lambda x: x.days) > 30)
+                & ((today - open_issues["发现日期"]).apply(lambda x: x.days) > SAFETY_OVERDUE_DAYS)
             ]
             result += f"\n预警汇总：🔴重大未闭环 {len(red)} 条 | 🟠较大未闭环 {len(orange)} 条 | 🟡一般超期未闭环 {len(yellow)} 条\n"
         return result
@@ -193,9 +202,12 @@ def compute_material_stats(region: str | None = None) -> str:
 
         # 滞后预警分级：滞后>10天红，5-10天橙，1-5天黄
         if not lagged.empty:
-            red = lagged[lagged["滞后天数"] > 10]
-            orange = lagged[(lagged["滞后天数"] > 5) & (lagged["滞后天数"] <= 10)]
-            yellow = lagged[lagged["滞后天数"] <= 5]
+            red = lagged[lagged["滞后天数"] > MATERIAL_LAG_RED_DAYS]
+            orange = lagged[
+                (lagged["滞后天数"] > MATERIAL_LAG_ORANGE_DAYS)
+                & (lagged["滞后天数"] <= MATERIAL_LAG_RED_DAYS)
+            ]
+            yellow = lagged[lagged["滞后天数"] <= MATERIAL_LAG_ORANGE_DAYS]
             result += f"\n滞后预警：🔴超10天 {len(red)} 条 | 🟠5-10天 {len(orange)} 条 | 🟡1-5天 {len(yellow)} 条\n"
 
             result += "\n滞后材料明细（按滞后天数降序）：\n"
