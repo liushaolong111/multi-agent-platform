@@ -27,9 +27,9 @@ SESSION_TTL = int(os.getenv("SESSION_TTL", "3600"))
 # ---- PostgreSQL（长期记忆）----
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-# ---- 业务数据库（销售/反馈数据，Text-to-SQL 查询目标）----
-# 默认 SQLite（本地开发零依赖）；生产切 PostgreSQL：
-#   BUSINESS_DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/business_db
+# ---- 业务数据库（工程项目 / 成本 / 安全质量数据，Text-to-SQL 查询目标）----
+# 默认 SQLite（本地开发零依赖）；生产切 MySQL / PostgreSQL：
+#   BUSINESS_DATABASE_URL=mysql+pymysql://user:pass@host:3306/business_db?charset=utf8mb4
 BUSINESS_DATABASE_URL = os.getenv(
     "BUSINESS_DATABASE_URL", f"sqlite:///{BASE_DIR / 'data' / 'business.db'}"
 )
@@ -39,10 +39,13 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
 FAISS_INDEX_DIR = str(BASE_DIR / "faiss_index")
 DATA_DIR = str(BASE_DIR / "data")
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "3"))
+# MMR 精排：RRF 融合后取 RERANK_CANDIDATES 条，经 MMR 多样性精排取 RAG_TOP_K 条
+RERANK_CANDIDATES = int(os.getenv("RERANK_CANDIDATES", "12"))
+MMR_LAMBDA = float(os.getenv("MMR_LAMBDA", "0.7"))  # 1=纯相关性, 0=纯多样性
 
 # 公司级敏感文件关键词（RBAC 单一出口判定）：文件名命中即标记为
-# visibility=company，region 受限角色（sales）不可检索、不可读取。
-COMPANY_SENSITIVE_KEYWORDS = ("sales", "financial", "feedback", "sync")
+# visibility=company，region 受限角色（manager）不可检索、不可读取。
+COMPANY_SENSITIVE_KEYWORDS = ("sync", "经营", "financial")
 
 # ---- 工作流 ----
 MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "3"))
@@ -50,6 +53,10 @@ MAX_ITERATIONS = int(os.getenv("MAX_ITERATIONS", "3"))
 MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", "3"))
 # 人工审批：true 时高风险工具（业务库查询）执行前需 POST /chat/approve 确认
 APPROVAL_MODE = os.getenv("APPROVAL_MODE", "false").lower() == "true"
+
+# ---- MCP 工具总线 ----
+# 开启后 Agent 的工具列表中会追加 MCP 工具总线暴露的工具（mysql/vector/erp）
+ENABLE_MCP_TOOLS = os.getenv("ENABLE_MCP_TOOLS", "false").lower() == "true"
 
 # ---- 可观测性（日志）----
 # json：每行一个 JSON 对象（生产/容器，便于 ELK/Loki 采集）；其他值：彩色控制台输出

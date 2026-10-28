@@ -22,11 +22,11 @@ def _fake_llm_reply(prompt, fallback=""):
     if "分类器" in prompt:
         return "data_analysis"
     if "规划器" in prompt:
-        return '["计算总销售额", "分析产品占比"]'
+        return '["统计项目总成本", "分析成本类别占比"]'
     if "审核" in prompt:
         return "APPROVED"
     # Skill 的回答
-    return "总销售额为 2,535,000 元。"
+    return "2026 年上半年项目总成本为 197,664,220 元。"
 
 
 @pytest.fixture(autouse=True)
@@ -44,9 +44,9 @@ def mock_external_dependencies():
     mock_tool_response = MagicMock()
     mock_tool_response.tool_calls = []
 
-    # mock 向量检索（skill 走 app.client.vectorstore.similarity_search 统一入口）
+    # mock 向量检索（skill 走 app.client.vectorstore.multi_route_search 多路召回入口）
     mock_doc = MagicMock()
-    mock_doc.page_content = "销售数据片段"
+    mock_doc.page_content = "施工成本管理片段"
 
     with (
         patch("app.agent.nodes.router.safe_invoke", mock_llm),
@@ -57,7 +57,7 @@ def mock_external_dependencies():
             "app.agent.nodes.tool_decide.safe_ainvoke_with_tools",
             new=AsyncMock(return_value=mock_tool_response),
         ),
-        patch("app.agent.nodes.skill.similarity_search", return_value=[mock_doc]),
+        patch("app.agent.nodes.skill.multi_route_search", return_value=[mock_doc]),
         patch("app.agent.nodes.skill.get_session", return_value={}),
         patch("app.agent.nodes.skill.update_session"),
         patch("app.agent.nodes.skill.get_long_term", return_value=[]),
@@ -70,7 +70,7 @@ def test_router_node():
     """Router 应返回合法的 task_type。"""
     from app.agent.nodes.router import router_node
 
-    state = {"user_input": "分析销售数据"}
+    state = {"user_input": "分析项目成本数据"}
     result = router_node(state)
     assert result["task_type"] in {"data_analysis", "report_generation", "knowledge_query"}
     assert result["status"] == "routed"
@@ -80,7 +80,7 @@ def test_planner_node():
     """Planner 应返回非空列表。"""
     from app.agent.nodes.planner import planner_node
 
-    state = {"user_input": "分析销售数据", "task_type": "data_analysis", "iteration": 0}
+    state = {"user_input": "分析项目成本数据", "task_type": "data_analysis", "iteration": 0}
     result = planner_node(state)
     assert isinstance(result["plan"], list)
     assert len(result["plan"]) > 0
@@ -92,10 +92,10 @@ def test_reviewer_node():
     """Reviewer 应返回 APPROVED 或 REVISE。"""
     from app.agent.nodes.reviewer import reviewer_node
 
-    state = {"current_task": "计算销售额", "tool_result": "总销售额 253 万", "user_id": "u1", "session_id": "s1"}
+    state = {"current_task": "计算项目成本", "tool_result": "总成本 19766 万", "user_id": "u1", "session_id": "s1"}
     result = reviewer_node(state)
     assert result["review_verdict"] in {"APPROVED", "REVISE"}
-    assert result["final_answer"] == "总销售额 253 万"
+    assert result["final_answer"] == "总成本 19766 万"
 
 
 def test_skill_node_processes_all_tasks():
@@ -103,15 +103,15 @@ def test_skill_node_processes_all_tasks():
     from app.agent.nodes.skill import skill_node
 
     state = {
-        "user_input": "分析销售数据",
-        "plan": ["计算总销售额", "分析产品占比"],
+        "user_input": "分析项目成本数据",
+        "plan": ["统计项目总成本", "分析成本类别占比"],
         "session_id": "s1",
         "user_id": "u1",
     }
     result = asyncio.run(skill_node(state))
     # 两个子任务都应出现在结果中
-    assert "计算总销售额" in result["tool_result"]
-    assert "分析产品占比" in result["tool_result"]
+    assert "统计项目总成本" in result["tool_result"]
+    assert "分析成本类别占比" in result["tool_result"]
     assert result["status"] == "skill_executed"
 
 
@@ -119,7 +119,7 @@ def test_tool_decide_no_tool():
     """ReAct 决策：LLM 不调工具时 pending 为空（收敛）。"""
     from app.agent.nodes.tool_decide import tool_decide_node
 
-    state = {"current_task": "计算销售额", "tool_result": "已有回答", "tool_rounds": 0}
+    state = {"current_task": "计算项目成本", "tool_result": "已有回答", "tool_rounds": 0}
     result = asyncio.run(tool_decide_node(state))
     assert result["pending_tool_calls"] == []
 
@@ -129,8 +129,8 @@ def test_tool_decide_chart_keyword_triggers_draw():
     from app.agent.nodes.tool_decide import tool_decide_node
 
     state = {
-        "current_task": "绘制月度销售趋势图",
-        "plan": ["绘制月度销售趋势图"],
+        "current_task": "绘制月度成本趋势图",
+        "plan": ["绘制月度成本趋势图"],
         "tool_result": "已有回答",
         "tool_rounds": 0,
     }
@@ -147,7 +147,7 @@ def test_tool_exec_accumulates_observations():
     fake_tool.invoke.return_value = "查询结果：华东 100 万"
     with patch("app.agent.nodes.tool_exec._TOOL_MAP", {"query_database": fake_tool}):
         state = {
-            "current_task": "查销售额",
+            "current_task": "查项目成本",
             "pending_tool_calls": [{"name": "query_database", "args": {}}],
             "tool_observations": "",
             "tool_rounds": 0,
@@ -198,17 +198,17 @@ def test_scoped_region_and_rag_filter():
     """RBAC 作用域原语：region 受限角色才有区域作用域与检索过滤条件。"""
     from app.service.permission import rag_scope_filter, scoped_region
 
-    assert scoped_region("sales", "华东") == "华东"
+    assert scoped_region("manager", "华东") == "华东"
     assert scoped_region("admin", "") is None
     assert scoped_region("viewer", "") is None
-    # sales 未配区域时不限制（避免误锁死）
-    assert scoped_region("sales", "") is None
+    # manager 未配区域时不限制（避免误锁死）
+    assert scoped_region("manager", "") is None
 
-    assert rag_scope_filter("sales", "华东") == {"visibility": "public"}
+    assert rag_scope_filter("manager", "华东") == {"visibility": "public"}
     assert rag_scope_filter("admin", "") is None
 
 
-def test_skill_scopes_retrieval_for_sales():
+def test_skill_scopes_retrieval_for_manager():
     """region 受限角色检索必须带 visibility=public 过滤（堵住 RAG 旁路泄露）。"""
     from app.agent.nodes.skill import skill_node
 
@@ -218,13 +218,13 @@ def test_skill_scopes_retrieval_for_sales():
         captured["metadata_filter"] = metadata_filter
         return [MagicMock(page_content="公开资料")]
 
-    with patch("app.agent.nodes.skill.similarity_search", side_effect=fake_search):
+    with patch("app.agent.nodes.skill.multi_route_search", side_effect=fake_search):
         state = {
-            "user_input": "各区域销售额",
-            "plan": ["汇总销售额"],
+            "user_input": "各区域成本对比",
+            "plan": ["汇总成本"],
             "session_id": "s1",
-            "user_id": "sales_hd",
-            "user_role": "sales",
+            "user_id": "manager_hd",
+            "user_role": "manager",
             "user_region": "华东",
         }
         asyncio.run(skill_node(state))
@@ -233,18 +233,17 @@ def test_skill_scopes_retrieval_for_sales():
 
 
 def test_tool_exports_respect_scope():
-    """工具出口权限：region 受限角色不能读公司级文件、不能查公司级反馈。"""
+    """工具出口权限：region 受限角色不能读公司级同步摘要。"""
     from app.agent.nodes.text2sql import _current_user, set_current_user
-    from app.agent.nodes.tool import query_feedback, read_file
+    from app.agent.nodes.tool import read_file
 
     try:
-        set_current_user({"role": "sales", "region": "华东"})
-        assert "不支持读取" in read_file.invoke({"filename": "sales_q1.csv"})
-        assert "不支持查询" in query_feedback.invoke({})
+        set_current_user({"role": "manager", "region": "华东"})
+        assert "不支持读取" in read_file.invoke({"filename": "sync_cost_summary.md"})
 
         set_current_user({"role": "admin", "region": ""})
         # admin 不受限：文件存在则正常返回内容
-        assert "不支持" not in read_file.invoke({"filename": "product_info.md"})
+        assert "不支持" not in read_file.invoke({"filename": "宝冶项目周报样例.md"})
     finally:
         _current_user.set({"role": "admin", "region": ""})
 
@@ -256,7 +255,7 @@ def test_full_graph_end_to_end():
     result = asyncio.run(
         graph.ainvoke(
             {
-                "user_input": "分析上季度销售数据",
+                "user_input": "分析 2026 年上半年项目成本",
                 "messages": [],
                 "status": "start",
                 "iteration": 0,

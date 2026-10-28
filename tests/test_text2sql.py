@@ -13,8 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 def test_validate_readonly_sql_allows_select():
     from app.repository.business import validate_readonly_sql
 
-    assert validate_readonly_sql("SELECT * FROM sales_records") is None
-    assert validate_readonly_sql("  select product, sum(amount) from sales_records group by product  ") is None
+    assert validate_readonly_sql("SELECT * FROM cost_records") is None
+    assert validate_readonly_sql("  select cost_category, sum(amount) from cost_records group by cost_category  ") is None
     assert validate_readonly_sql("WITH t AS (SELECT 1) SELECT * FROM t") is None
     # 末尾分号允许
     assert validate_readonly_sql("SELECT 1;") is None
@@ -23,10 +23,10 @@ def test_validate_readonly_sql_allows_select():
 def test_validate_readonly_sql_blocks_writes():
     from app.repository.business import validate_readonly_sql
 
-    assert validate_readonly_sql("DELETE FROM sales_records") is not None
-    assert validate_readonly_sql("UPDATE sales_records SET amount = 0") is not None
-    assert validate_readonly_sql("DROP TABLE sales_records") is not None
-    assert validate_readonly_sql("INSERT INTO sales_records VALUES (1)") is not None
+    assert validate_readonly_sql("DELETE FROM cost_records") is not None
+    assert validate_readonly_sql("UPDATE cost_records SET amount = 0") is not None
+    assert validate_readonly_sql("DROP TABLE cost_records") is not None
+    assert validate_readonly_sql("INSERT INTO cost_records VALUES (1)") is not None
     # SELECT 里藏写操作也拦
     assert validate_readonly_sql("SELECT * FROM x; DROP TABLE y") is not None
 
@@ -42,8 +42,8 @@ def test_extract_sql_strips_markdown_and_prose():
     from app.agent.nodes.text2sql import _extract_sql
 
     assert _extract_sql("```sql\nSELECT 1;\n```") == "SELECT 1"
-    assert _extract_sql("好的，查询如下：\nSELECT product FROM sales_records") == \
-        "SELECT product FROM sales_records"
+    assert _extract_sql("好的，查询如下：\nSELECT project_name FROM projects") == \
+        "SELECT project_name FROM projects"
     assert _extract_sql("WITH a AS (SELECT 1) SELECT * FROM a;") == \
         "WITH a AS (SELECT 1) SELECT * FROM a"
 
@@ -52,7 +52,7 @@ def test_execute_readonly_query_blocks_write_without_db():
     """即使业务库不可用，写操作也应被静态校验拦截在引擎之前。"""
     from app.repository.business import execute_readonly_query
 
-    result = execute_readonly_query("DROP TABLE sales_records")
+    result = execute_readonly_query("DROP TABLE cost_records")
     assert "安全校验" in result or "不可用" in result
 
 

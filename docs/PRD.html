@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智建 Agent · 工程多智能体分析平台 - 产品需求文档</title>
+<style>
+  :root {
+    --primary: #1a73e8;
+    --bg: #fafbfc;
+    --card: #ffffff;
+    --border: #e1e4e8;
+    --text: #24292e;
+    --muted: #6a737d;
+    --accent: #0366d6;
+    --green: #22863a;
+    --orange: #e36209;
+    --red: #d73a49;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+  }
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+  h1 {
+    font-size: 28px;
+    border-bottom: 2px solid var(--primary);
+    padding-bottom: 16px;
+    margin-bottom: 8px;
+  }
+  .meta { color: var(--muted); font-size: 14px; margin-bottom: 40px; }
+  h2 {
+    font-size: 22px;
+    margin-top: 48px;
+    padding-left: 12px;
+    border-left: 4px solid var(--primary);
+  }
+  h3 { font-size: 18px; margin-top: 32px; }
+  h4 { font-size: 16px; margin-top: 24px; color: var(--accent); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: #f6f8fa; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafbfc; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin: 16px 0;
+  }
+  .flow {
+    background: #f6f8fa;
+    border-left: 3px solid var(--accent);
+    padding: 16px 20px;
+    margin: 16px 0;
+    border-radius: 0 6px 6px 0;
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 14px;
+    white-space: pre-wrap;
+    line-height: 1.6;
+  }
+  .code {
+    background: #f6f8fa;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin: 16px 0;
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 13px;
+    overflow-x: auto;
+  }
+  .tag {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .tag-p0 { background: #ffeef0; color: var(--red); }
+  .tag-p1 { background: #fff5b1; color: #b08800; }
+  .tag-role { background: #e6f3ff; color: var(--accent); }
+  .tag-yellow { background: #fff3cd; color: #856404; }
+  .tag-orange { background: #ffe5d0; color: var(--orange); }
+  .tag-red { background: #ffeef0; color: var(--red); }
+  .assumption {
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    margin: 12px 0;
+  }
+  .assumption::before { content: "假设："; font-weight: 600; color: #f57c00; }
+  ul { padding-left: 24px; }
+  li { margin: 6px 0; }
+  .toc {
+    background: #f6f8fa;
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 40px;
+  }
+  .toc ol { padding-left: 20px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .fr-id { color: var(--accent); font-weight: 600; }
+  .persona {
+    display: flex;
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .persona-card {
+    flex: 1;
+    background: #f0f7ff;
+    border: 1px solid #c8e1ff;
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .persona-card h4 { margin-top: 0; color: var(--accent); }
+  .persona-card .q {
+    background: #fff;
+    border-left: 2px solid var(--accent);
+    padding: 8px 12px;
+    margin: 8px 0;
+    font-size: 13px;
+    border-radius: 0 4px 4px 0;
+  }
+  /* 分层架构图 */
+  .arch-stack { margin: 20px 0; }
+  .arch-layer {
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin: 10px 0;
+    background: #fff;
+    position: relative;
+  }
+  .arch-layer + .arch-layer::before {
+    content: "";
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-top: 8px solid var(--border);
+  }
+  .arch-layer-title {
+    font-weight: 600;
+    color: var(--accent);
+    font-size: 14px;
+    margin-bottom: 6px;
+  }
+  .arch-layer-content {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.8;
+  }
+  .arch-layer-content code {
+    background: #f6f8fa;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  .arch-agent-row {
+    display: flex;
+    gap: 12px;
+    align-items: stretch;
+    margin: 8px 0;
+  }
+  .arch-agent-box {
+    flex: 1;
+    border: 1px dashed var(--accent);
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-size: 12px;
+    text-align: center;
+    background: #f0f7ff;
+  }
+  .arch-agent-arrow {
+    display: flex;
+    align-items: center;
+    color: var(--accent);
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>智建 Agent · 工程多智能体分析平台 — 产品需求文档</h1>
+<div class="meta">版本 v1.2 · 更新日期 2026-10-28 · 文档类型：Conventional PRD</div>
+
+<div class="toc">
+  <strong>目录</strong>
+  <ol>
+    <li><a href="#bg">背景与目标</a>（含 1.3 分层架构）</li>
+    <li><a href="#scope">范围界定</a></li>
+    <li><a href="#roles">用户画像与角色权限</a></li>
+    <li><a href="#scenarios">核心场景与优先级</a></li>
+    <li><a href="#objects">核心对象与状态</a></li>
+    <li><a href="#flow">核心用户流程</a></li>
+    <li><a href="#fr">功能需求</a></li>
+    <li><a href="#rules">共享规则与异常处理</a></li>
+    <li><a href="#algo">核心算法</a></li>
+    <li><a href="#nfr">非功能需求</a></li>
+    <li><a href="#roadmap">实施路线图</a></li>
+    <li><a href="#risk">风险与缓解</a></li>
+    <li><a href="#metrics">成功度量</a></li>
+    <li><a href="#open">待确认问题</a></li>
+  </ol>
+</div>
+
+<!-- 1. 背景与目标 -->
+<h2 id="bg">一、背景与目标</h2>
+
+<h3>1.1 背景</h3>
+<p>工程企业在项目管理过程中，成本、质量安全、制度规范等数据分散在业务系统和文档中，管理人员获取信息需要跨系统查询、人工汇总，效率低且口径不统一。</p>
+
+<h3>1.2 目标</h3>
+<ul>
+  <li><strong>可观测结果</strong>：用户输入自然语言问题后，系统在合理时间内返回包含精确数字和数据来源的回答</li>
+  <li><strong>数据准确</strong>：回答中的数字来自程序计算（pandas 预计算）或真实数据库查询（Text-to-SQL），不依赖文档中的模糊数字</li>
+  <li><strong>权限隔离</strong>：不同角色用户只能看到其权限范围内的数据</li>
+</ul>
+
+<h3>1.3 分层架构</h3>
+<p>系统按职责分为七层，自上而下依次为交互层、智能体编排层、工具层、技能层、并发与缓存层、数据层、外部集成层，各层之间单向依赖，下层为上层提供能力。</p>
+
+<div class="arch-stack">
+
+  <div class="arch-layer">
+    <div class="arch-layer-title">交互层</div>
+    <div class="arch-layer-content">Web UI 看板（<code>/ui</code>） ｜ HTTP API（<code>/chat</code>） ｜ SSE 流式接口（<code>/chat/stream</code>）</div>
+  </div>
+
+  <div class="arch-layer">
+    <div class="arch-layer-title">智能体编排层（LangGraph StateGraph）</div>
+    <div class="arch-agent-row">
+      <div class="arch-agent-box">
+        <strong>Router</strong><br/>意图分类
+      </div>
+      <div class="arch-agent-arrow">→</div>
+      <div class="arch-agent-box">
+        <strong>Planner</strong><br/>任务拆解
+      </div>
+      <div class="arch-agent-arrow">→</div>
+      <div class="arch-agent-box">
+        <strong>Skill</strong><br/>检索+统计
+      </div>
+      <div class="arch-agent-arrow">→</div>
+      <div class="arch-agent-box">
+        <strong>Experts</strong><br/>三专家并行
+      </div>
+      <div class="arch-agent-arrow">→</div>
+      <div class="arch-agent-box">
+        <strong>Coordinator</strong><br/>聚合
+      </div>
+    </div>
+    <div class="arch-agent-row" style="padding-left: 40%;">
+      <div class="arch-agent-box">
+        <strong>ReAct</strong><br/>工具循环
+      </div>
+      <div class="arch-agent-arrow">→</div>
+      <div class="arch-agent-box">
+        <strong>Reviewer</strong><br/>审核
+      </div>
+    </div>
+  </div>
+
+  <div class="arch-layer">
+    <div class="arch-layer-title">MCP 工具总线层</div>
+    <div class="arch-layer-content">
+      <strong>mcp-mysql-server</strong>：<code>mysql_query</code> / <code>mysql_query_materials</code> / <code>get_db_schema</code><br/>
+      <strong>mcp-vector-server</strong>：<code>vector_search</code>（多路召回 + RRF + MMR）<br/>
+      <strong>mcp-erp-server</strong>：<code>erp_fetch_purchase_orders</code> / <code>erp_fetch_inventory</code> / <code>erp_fetch_schedule</code>
+    </div>
+  </div>
+
+  <div class="arch-layer">
+    <div class="arch-layer-title">技能层（Skill）</div>
+    <div class="arch-layer-content">多路召回检索（分桶路由 + 向量/关键词混合 + RRF + MMR） ｜ pandas 预计算统计 ｜ 三级预警分级（黄/橙/红） ｜ 多智能体专家协作</div>
+  </div>
+
+  <div class="arch-layer">
+    <div class="arch-layer-title">并发与缓存层</div>
+    <div class="arch-layer-content">asyncio 并发（<code>to_thread</code> + <code>gather</code>） ｜ Redis 缓存（TTL 300s） ｜ Redis 分布式锁（SETNX + token 校验 + 看门狗续期） ｜ RBAC 权限过滤</div>
+  </div>
+
+  <div class="arch-layer">
+    <div class="arch-layer-title">数据层</div>
+    <div class="arch-layer-content">MySQL 业务库（projects / cost_records / safety_issues / material_records / users） ｜ FAISS 向量库 ｜ Redis 短期记忆 ｜ PostgreSQL/SQLite 长期记忆</div>
+  </div>
+
+  <div class="arch-layer">
+    <div class="arch-layer-title">外部集成层</div>
+    <div class="arch-layer-content">DeepSeek LLM API ｜ ERP 系统 API（采购订单/库存/到货计划） ｜ 外部数据采集（6h 增量缓存） ｜ JWT 身份认证</div>
+  </div>
+
+</div>
+
+<!-- 2. 范围 -->
+<h2 id="scope">二、范围界定</h2>
+
+<h3>2.1 P0 范围（核心闭环）</h3>
+<div class="card">
+<table>
+<tr><th>模块</th><th>说明</th></tr>
+<tr><td>用户认证与鉴权</td><td>登录、JWT 令牌、角色识别</td></tr>
+<tr><td>自然语言问答</td><td>用户提问 → 系统返回回答（含精确数字）</td></tr>
+<tr><td>意图识别与任务拆解</td><td>自动分类问题类型、拆解复杂问题</td></tr>
+<tr><td>知识检索</td><td>制度文档多路召回（分桶路由 + 向量/关键词混合检索 + 精排）</td></tr>
+<tr><td>数据查询</td><td>pandas 预计算统计 + Text-to-SQL 查业务库</td></tr>
+<tr><td>工具调用循环</td><td>ReAct 决策-执行循环，支持多步探索</td></tr>
+<tr><td>结果审核</td><td>回答质量审核（数字完整性校验）</td></tr>
+<tr><td>权限控制</td><td>RBAC 行级数据隔离（角色 + 区域）</td></tr>
+</table>
+</div>
+
+<h3>2.2 P1 范围（增强能力）</h3>
+<div class="card">
+<table>
+<tr><th>模块</th><th>说明</th></tr>
+<tr><td>人工审批闸门</td><td>高危查询需人工确认后执行</td></tr>
+<tr><td>短期记忆</td><td>同一会话内上下文连贯，支持追问</td></tr>
+<tr><td>长期记忆</td><td>跨会话历史问答留存</td></tr>
+<tr><td>流式输出</td><td>回答通过 SSE 逐字推送</td></tr>
+<tr><td>数据可视化</td><td>支持生成趋势图等图表</td></tr>
+</table>
+</div>
+
+<h3>2.3 不在范围内</h3>
+<ul>
+  <li>数据录入与编辑（仅查询，不提供写操作）</li>
+  <li>多模型对比与切换（当前固定单一模型）</li>
+  <li>移动端适配</li>
+  <li>主动预警推送（定时任务 + 消息推送，属于后续迭代）</li>
+</ul>
+
+<!-- 3. 用户画像与角色权限 -->
+<h2 id="roles">三、用户画像与角色权限</h2>
+
+<h3>3.1 用户画像</h3>
+
+<div class="persona">
+  <div class="persona-card">
+    <h4>集团管理员 <span class="tag tag-role">admin</span></h4>
+    <p><strong>关注：</strong>全公司成本、安全、质量的整体态势，需要全局视图和横向对比。</p>
+    <p><strong>典型问题：</strong></p>
+    <div class="q">"2026年上半年各区域的项目成本排名和预算执行率？"</div>
+    <div class="q">"哪些项目的安全问题闭环率低于80%？"</div>
+    <div class="q">"华东区和华北区的成本结构有什么差异？"</div>
+  </div>
+  <div class="persona-card">
+    <h4>区域经理 <span class="tag tag-role">manager</span></h4>
+    <p><strong>关注：</strong>本区域内的项目成本、安全、质量状况，需要及时发现和处理问题。</p>
+    <p><strong>典型问题：</strong></p>
+    <div class="q">"我们华东区这个月的成本超支了多少？"</div>
+    <div class="q">"华东区有哪些未闭环的重大安全隐患？"</div>
+    <div class="q">"BY-HD-001项目的预算执行率是多少？"</div>
+  </div>
+  <div class="persona-card">
+    <h4>只读用户 <span class="tag tag-role">viewer</span></h4>
+    <p><strong>关注：</strong>查询制度规范、了解项目基本情况，仅有查看权限。</p>
+    <p><strong>典型问题：</strong></p>
+    <div class="q">"成本超支5%以上需要走什么审批流程？"</div>
+    <div class="q">"高处作业的安全规范有哪些要求？"</div>
+    <div class="q">"质量安全问题的整改闭环标准是什么？"</div>
+  </div>
+</div>
+
+<h3>3.2 角色权限矩阵</h3>
+<table>
+<tr><th>角色</th><th>数据范围</th><th>功能权限</th><th>文档可见性</th></tr>
+<tr><td>集团管理员 admin</td><td>全部区域、全部项目</td><td>查询、审批</td><td>全部（含 company 级敏感文档）</td></tr>
+<tr><td>区域经理 manager</td><td>仅所属区域</td><td>查询、审批</td><td>仅 public 级</td></tr>
+<tr><td>只读用户 viewer</td><td>按配置的可见范围</td><td>仅查询</td><td>仅 public 级</td></tr>
+</table>
+
+<h3>3.3 权限规则</h3>
+<div class="card">
+<ul>
+  <li><strong>行级隔离</strong>：区域经理的所有数据出口（SQL 查询、RAG 检索、统计结果、图表生成）均自动追加区域过滤条件，无法通过任何路径获取其他区域数据</li>
+  <li><strong>文档可见性</strong>：包含敏感经营数据的文档标记为 <code>company</code> 可见性，仅管理员可检索；普通制度文档为 <code>public</code>，全员可见</li>
+  <li><strong>身份来源</strong>：所有请求以 JWT 令牌中的身份为准，请求体中的 user_id 不可覆盖令牌身份</li>
+</ul>
+</div>
+
+<!-- 4. 核心场景与优先级 -->
+<h2 id="scenarios">四、核心场景与优先级</h2>
+
+<table>
+<tr><th>优先级</th><th>场景</th><th>描述</th><th>主要角色</th></tr>
+<tr><td><span class="tag tag-p0">P0</span></td><td>成本分析查询</td><td>查询总成本、预算执行率、分区域/类别/项目/月度成本分布</td><td>admin、manager</td></tr>
+<tr><td><span class="tag tag-p0">P0</span></td><td>质量安全查询</td><td>查询安全问题统计、闭环率、严重程度分布、整改状态</td><td>admin、manager</td></tr>
+<tr><td><span class="tag tag-p0">P0</span></td><td>材料库存与到货查询</td><td>查询材料类别分布、库存数量、到货滞后情况、供应商信息</td><td>admin、manager</td></tr>
+<tr><td><span class="tag tag-p0">P0</span></td><td>制度规范检索</td><td>查询成本管理、安全规范、质量验收等制度文档</td><td>全部角色</td></tr>
+<tr><td><span class="tag tag-p1">P1</span></td><td>灵活即席查询</td><td>预计算覆盖不了的组合查询（如"3月华东区材料费占比"），走 Text-to-SQL</td><td>admin、manager</td></tr>
+<tr><td><span class="tag tag-p1">P1</span></td><td>数据可视化</td><td>生成成本趋势图、安全问题分布图等图表</td><td>admin、manager</td></tr>
+<tr><td><span class="tag tag-p1">P1</span></td><td>多轮追问</td><td>基于上一轮回答继续追问（"那华东区呢？"）</td><td>全部角色</td></tr>
+</table>
+
+<!-- 5. 核心对象与状态 -->
+<h2 id="objects">五、核心对象与状态</h2>
+
+<h3>5.1 会话（Session）</h3>
+<table>
+<tr><th>属性</th><th>说明</th></tr>
+<tr><td>session_id</td><td>会话唯一标识，由前端生成或服务端分配</td></tr>
+<tr><td>user_id</td><td>所属用户</td></tr>
+<tr><td>last_interaction</td><td>上一轮回答的摘要（短期记忆）</td></tr>
+<tr><td>TTL</td><td>会话超时自动清理</td></tr>
+</table>
+
+<h3>5.2 问答结果（Answer）</h3>
+<table>
+<tr><th>属性</th><th>说明</th></tr>
+<tr><td>问题</td><td>用户原始输入</td></tr>
+<tr><td>回答</td><td>系统生成的回答文本</td></tr>
+<tr><td>审核状态</td><td>通过 / 未通过（未通过的回答不进入长期记忆）</td></tr>
+<tr><td>数据来源</td><td>预计算统计 / 数据库查询 / 知识库检索</td></tr>
+</table>
+
+<h3>5.3 业务数据对象</h3>
+<table>
+<tr><th>对象</th><th>核心字段</th></tr>
+<tr><td>工程项目</td><td>项目编号、名称、区域、状态、合同金额、开竣工日期</td></tr>
+<tr><td>成本流水</td><td>项目、区域、月份、成本类别、实际成本、预算金额</td></tr>
+<tr><td>质量安全问题</td><td>项目、区域、问题类型、严重程度、整改状态、发现日期</td></tr>
+<tr><td>材料库存</td><td>项目、区域、材料类别、材料名称、规格、库存数量、预计到货日期、计划使用日期、供应商</td></tr>
+<tr><td>知识文档</td><td>文件名、业务域、文档类型、可见性、时间周期</td></tr>
+</table>
+
+<!-- 6. 核心用户流程 -->
+<h2 id="flow">六、核心用户流程</h2>
+
+<h3>6.1 提问与回答主流程</h3>
+<div class="flow">用户登录
+  ↓
+输入自然语言问题
+  ↓
+[意图分类] → data_analysis / report_generation / knowledge_query
+  ↓
+[任务拆解] → 拆分为 2-4 个子任务
+  ↓
+[并行执行子任务]
+  ├─ pandas 预计算精确统计（Redis 缓存 300s + asyncio.to_thread 并发）
+  ├─ 多路召回知识库片段
+  └─ LLM 组织语言
+  ↓
+[多智能体专家协作]
+  ├─ 成本专家（预算执行率/超支预警视角）
+  ├─ 安全专家（隐患/闭环率/预警视角）
+  └─ 材料专家（库存/到货滞后/预警视角）
+  → 三专家 asyncio.gather 并行
+  ↓
+[协调者] → 聚合三专家意见，指出跨域关联
+  ↓
+[ReAct 工具循环]
+  ├─ 判断是否需要调工具
+  ├─ 调 Text-to-SQL 查业务库（按需）
+  └─ 观测回喂 → 再决策（最多 N 轮）
+  ↓
+[结果审核] → 校验数字完整性
+  ↓
+返回回答（流式推送）</div>
+
+<h3>6.2 权限校验流程</h3>
+<div class="flow">用户请求携带 JWT
+  ↓
+解析令牌 → 确定角色与区域
+  ↓
+数据出口校验
+  ├─ SQL 层：自动追加 region 过滤
+  ├─ RAG 层：按 visibility 过滤文档
+  └─ 统计层：按区域过滤数据
+  ↓
+返回权限范围内的结果</div>
+
+<!-- 7. 功能需求 -->
+<h2 id="fr">七、功能需求</h2>
+
+<h3>FR-01 用户认证</h3> <span class="tag tag-p0">P0</span>
+<div class="card">
+<p><strong>触发</strong>：用户访问平台时</p>
+<p><strong>处理规则</strong>：用户通过用户名密码登录，服务端验证后签发 JWT 令牌；后续所有请求必须携带令牌，无令牌或令牌无效则拒绝访问；令牌中包含用户角色和区域信息。</p>
+<p><strong>结果</strong>：登录成功后进入问答界面</p>
+<p><strong>验收标准</strong>：未携带令牌的请求返回 401；令牌解析出的角色与区域与数据库一致；请求体中的 user_id 不影响令牌身份。</p>
+</div>
+
+<h3>FR-02 自然语言问答</h3> <span class="tag tag-p0">P0</span>
+<div class="card">
+<p><strong>触发</strong>：用户在输入框提交问题</p>
+<p><strong>处理规则</strong>：</p>
+<ul>
+  <li>系统接收用户问题，创建或复用会话</li>
+  <li>问题经意图分类、任务拆解后执行</li>
+  <li>回答通过 SSE 流式推送给前端</li>
+  <li>回答中引用的数据需标明来源</li>
+</ul>
+<p><strong>结果</strong>：返回带精确数字和来源标注的回答</p>
+<p><strong>异常</strong>：模型不可用时返回降级提示，不阻塞</p>
+<p><strong>验收标准</strong>：回答中至少包含一个来自程序计算或数据库查询的精确数字；回答中标注数据来源（预计算/SQL/文档）。</p>
+</div>
+
+<h3>FR-03 意图识别与任务拆解</h3> <span class="tag tag-p0">P0</span>
+<div class="card">
+<p><strong>触发</strong>：收到用户问题后</p>
+<p><strong>处理规则</strong>：</p>
+<ul>
+  <li>意图分类：将问题分为 <code>data_analysis</code>、<code>report_generation</code>、<code>knowledge_query</code> 三类</li>
+  <li>任务拆解：复杂问题拆分为多个可并行执行的子任务</li>
+  <li>分类结果不合法时回退为 <code>knowledge_query</code></li>
+</ul>
+<p><strong>验收标准</strong>：分类结果在三类枚举内；子任务数量 1-4 个。</p>
+</div>
+
+<h3>FR-04 知识检索（多路召回）</h3> <span class="tag tag-p0">P0</span>
+<div class="card">
+<p><strong>触发</strong>：子任务执行时需要知识库内容</p>
+<p><strong>处理规则</strong>：</p>
+<ol>
+  <li><strong>分桶路由</strong>：根据查询推断业务域（成本/安全/质量/技术/管理/材料/天气），优先在目标域内检索，不足时回退全量</li>
+  <li><strong>双路召回</strong>：向量语义检索（FAISS）+ 关键词检索（BM25）并行执行</li>
+  <li><strong>RRF 融合</strong>：用倒数排名融合两路结果，解决分数尺度不一致问题</li>
+  <li><strong>MMR 精排</strong>：平衡相关性与多样性，避免召回结果高度重复</li>
+  <li><strong>RBAC 过滤</strong>：按用户权限过滤文档可见性</li>
+</ol>
+<p><strong>结果</strong>：返回 top-k 相关文档片段</p>
+<p><strong>异常</strong>：向量库不可达时返回空结果，不阻塞主流程</p>
+<p><strong>验收标准</strong>：召回文档的 business_domain 与查询推断的域匹配率≥80%；manager 角色无法召回 visibility=company 的文档。</p>
+</div>
+
+<h3>FR-05 数据查询（预计算 + Text-to-SQL）</h3> <span class="tag tag-p0">P0</span>
+<div class="card">
+<p><strong>触发</strong>：子任务需要精确数字时</p>
+<p><strong>处理规则</strong>：</p>
+<ul>
+  <li><strong>pandas 预计算</strong>：固定维度统计（总成本、预算执行率、分区域/类别/项目/月度；安全闭环率与严重程度分布；材料类别分布与到货滞后）由程序直接计算</li>
+  <li><strong>三级预警分级</strong>：成本（执行率≥105%黄/≥110%橙/≥115%红）、安全（重大未闭环红/较大未闭环橙/一般超30天未闭环黄）、材料（滞后天数1-5黄/5-10橙/>10红），由程序判定后注入回答</li>
+  <li><strong>结果缓存</strong>：统计结果写入 Redis 缓存（TTL 300s），相同区域的重复请求直接命中缓存，避免每次重读 CSV；Redis 不可达时降级为进程内内存缓存</li>
+  <li><strong>异步并发</strong>：成本/安全/材料三域统计用 <code>asyncio.to_thread</code> 放到线程池并通过 <code>asyncio.gather</code> 并发执行，避免阻塞事件循环</li>
+  <li><strong>Text-to-SQL</strong>：预计算覆盖不了的灵活查询，由 LLM 生成 SELECT 语句查业务库</li>
+  <li><strong>只读防护</strong>：仅允许 SELECT，禁止写操作；无 LIMIT 自动追加；结果截断 100 行</li>
+  <li><strong>自愈重试</strong>：SQL 执行报错时，把错误回喂 LLM 修正一次</li>
+</ul>
+<p><strong>权限</strong>：区域经理的 SQL 自动追加 <code>region = '所属区域'</code> 过滤</p>
+<p><strong>验收标准</strong>：SQL 仅包含 SELECT/WITH；无 LIMIT 时自动追加；区域经理的 SQL 必含 region 过滤条件。</p>
+</div>
+
+<h3>FR-06 工具调用循环（ReAct）</h3> <span class="tag tag-p0">P0</span>
+<div class="card">
+<p><strong>触发</strong>：初步回答生成后，判断是否需要补充查询</p>
+<p><strong>处理规则</strong>：</p>
+<ul>
+  <li>LLM 决定调用哪个工具（Function Calling），支持一次决策多个工具</li>
+  <li>工具执行结果回喂，LLM 再决策，形成"思考-行动-观察"循环</li>
+  <li>循环终止条件：LLM 决定不再调工具 或 达到最大轮数</li>
+</ul>
+<p><strong>验收标准</strong>：循环轮数不超过 MAX_TOOL_ROUNDS；工具调用参数与工具定义匹配。</p>
+</div>
+
+<h3>FR-07 人工审批闸门</h3> <span class="tag tag-p1">P1</span>
+<div class="card">
+<p><strong>触发</strong>：开启审批模式时，工具调用前</p>
+<p><strong>处理规则</strong>：</p>
+<ul>
+  <li>高危操作（如大范围数据查询）需展示给用户确认</li>
+  <li>用户批准后执行，拒绝则跳过</li>
+</ul>
+<p><strong>验收标准</strong>：审批模式开启时，工具调用必须经过用户确认；审批状态持久化，会话恢复后可继续。</p>
+</div>
+
+<h3>FR-08 结果审核</h3> <span class="tag tag-p0">P0</span>
+<div class="card">
+<p><strong>触发</strong>：回答生成后</p>
+<p><strong>处理规则</strong>：</p>
+<ul>
+  <li>检查回答是否包含具体数字（避免空泛回答）</li>
+  <li>审核通过的问答写入长期记忆</li>
+  <li>审核不通过则不存储</li>
+</ul>
+<p><strong>验收标准</strong>：不含数字的回答被标记为未通过；未通过的回答不出现在长期记忆检索结果中。</p>
+</div>
+
+<h3>FR-09 短期记忆</h3> <span class="tag tag-p1">P1</span>
+<div class="card">
+<p><strong>触发</strong>：同一会话内的多轮对话</p>
+<p><strong>处理规则</strong>：保存上一轮回答的摘要，注入下一轮 prompt；会话超时后自动清理。</p>
+<p><strong>降级</strong>：Redis 不可用时使用进程内内存存储</p>
+<p><strong>验收标准</strong>：同一会话内第二轮提问能引用第一轮回答的内容。</p>
+</div>
+
+<h3>FR-10 长期记忆</h3> <span class="tag tag-p1">P1</span>
+<div class="card">
+<p><strong>触发</strong>：回答审核通过后</p>
+<p><strong>处理规则</strong>：存储用户的历史问答对，跨会话留存；新会话提问时，检索最近 N 条历史问答作为上下文。</p>
+<p><strong>降级</strong>：数据库不可用时静默跳过，不阻塞</p>
+<p><strong>验收标准</strong>：新会话中检索到上一会话通过审核的问答。</p>
+</div>
+
+<h3>FR-11 多智能体专家协作</h3> <span class="tag tag-p1">P1</span>
+<div class="card">
+<p><strong>触发</strong>：Skill 节点产出初步分析后</p>
+<p><strong>处理规则</strong>：</p>
+<ul>
+  <li><strong>三领域专家</strong>：成本专家（预算执行率/超支预警视角）、安全专家（隐患/闭环率/预警视角）、材料专家（库存/到货滞后/预警视角），各有独立角色 prompt，只看自己领域的统计数据</li>
+  <li><strong>并行执行</strong>：三专家通过 <code>asyncio.gather</code> 并行调用 LLM，延迟 ≈ 单次调用</li>
+  <li><strong>协调者聚合</strong>：协调者节点聚合三专家的专业分析，融合成连贯的综合回答（保留关键数字和预警等级，指出跨域关联，如"成本超支可能与材料滞后有关"）</li>
+  <li><strong>降级</strong>：专家分析全空时直接透传 Skill 结果，不阻塞主流程</li>
+</ul>
+<p><strong>设计取舍</strong>：不采用全自主群聊（CrewAI/AutoGen 式），避免不可控和延迟过高；采用"一轮并行分析 + 聚合"模式，兼顾专业深度和响应速度。</p>
+<p><strong>验收标准</strong>：回答中包含至少两个领域的专业视角；协调者指出跨域关联；三专家延迟不超过单次 LLM 调用的 1.2 倍。</p>
+</div>
+
+<h3>FR-12 缓存与分布式锁</h3> <span class="tag tag-p1">P1</span>
+<div class="card">
+<p><strong>触发</strong>：统计计算、灌库、用户创建、长期记忆写入等场景</p>
+<p><strong>处理规则</strong>：</p>
+<ul>
+  <li><strong>Redis 缓存</strong>：pandas 统计结果用 <code>@cached</code> 装饰器缓存，TTL 300s，key 带参数 hash；Redis 不可达时降级为进程内内存缓存</li>
+  <li><strong>分布式锁</strong>：灌库、用户创建、长期记忆写入等临界区使用 Redis 分布式锁（SETNX + 唯一 token + 看门狗自动续期），释放时用 Lua 脚本原子校验 token 防止误删；Redis 不可达时降级为进程内 <code>threading.Lock</code></li>
+</ul>
+<p><strong>降级</strong>：Redis 不可达时，缓存降级为进程内内存，锁降级为进程内互斥锁，功能不中断。</p>
+<p><strong>验收标准</strong>：相同区域的重复统计请求命中缓存不重复计算；并发灌库时只有一个进程执行；锁释放时不误删他人持有的锁。</p>
+</div>
+
+<!-- 8. 共享规则 -->
+<h2 id="rules">八、共享规则与异常处理</h2>
+
+<h3>8.1 数据准确性原则</h3>
+<div class="card">
+<ul>
+  <li><strong>数字交给程序</strong>：所有统计数字由 pandas 预计算或 SQL 查询生成，LLM 仅负责组织语言</li>
+  <li><strong>结构化数据不进向量库</strong>：业务明细数据不向量化，避免绕过 SQL 层的权限隔离</li>
+  <li><strong>文档数字不作事实依据</strong>：RAG 检索的文档仅用于背景和口径说明，不作为数字来源</li>
+</ul>
+</div>
+
+<h3>8.2 优雅降级规则</h3>
+<table>
+<tr><th>依赖</th><th>不可达时行为</th></tr>
+<tr><td>LLM 服务</td><td>返回降级提示文本，不阻塞请求</td></tr>
+<tr><td>Redis（短期记忆/缓存/分布式锁）</td><td>短期记忆降级为进程内内存；统计缓存降级为进程内缓存；分布式锁降级为进程内 threading.Lock</td></tr>
+<tr><td>数据库（长期记忆）</td><td>跳过长期记忆读写</td></tr>
+<tr><td>向量库</td><td>跳过知识检索，仅用预计算统计</td></tr>
+<tr><td>业务数据库</td><td>Text-to-SQL 不可用，返回提示</td></tr>
+</table>
+
+<h3>8.3 安全规则</h3>
+<ul>
+  <li>SQL 三层防护：静态关键字校验 + 强制 LIMIT + 异常兜底</li>
+  <li>RBAC 贯穿所有数据出口：SQL、RAG、统计、图表</li>
+  <li>工具白名单：仅允许预定义工具调用，禁止任意代码执行</li>
+</ul>
+
+<!-- 9. 核心算法 -->
+<h2 id="algo">九、核心算法</h2>
+
+<h3>9.1 多路召回流程</h3>
+<div class="code">def multi_route_search(query, k=3, user):
+    # 1. 分桶路由
+    domain = infer_domain(query)  # cost / safety / quality / ...
+    candidates = search_in_domain(domain, k*3)
+    if len(candidates) < k:
+        candidates += search_all(k*3)  # 回退全量
+
+    # 2. 双路召回
+    dense = vector_search(query, candidates, k=k*3)
+    sparse = bm25_search(query, candidates, k=k*3)
+
+    # 3. RRF 融合（粗排）
+    fused = rrf_fuse(dense, sparse, k=RERANK_CANDIDATES)
+
+    # 4. MMR 精排
+    reranked = mmr_rerank(query, fused, k=k, lambda=0.7)
+
+    # 5. RBAC 过滤
+    return filter_by_visibility(reranked, user)</div>
+
+<h3>9.2 ReAct 决策-执行循环</h3>
+<div class="code">def react_loop(state, max_rounds=5):
+    for round in range(max_rounds):
+        # Thought + Action：LLM 决定调不调工具、调哪个
+        tool_calls = llm.decide_tools(state)
+        if not tool_calls:
+            break  # 收敛：模型决定不再调工具
+
+        # Act + Observation：执行工具，累积观测
+        for call in tool_calls:
+            result = execute_tool(call)
+            state.observations.append(result)
+
+    return state  # 超过 max_rounds 强制熔断</div>
+
+<h3>9.3 RBAC 区域隔离（Text-to-SQL 层）</h3>
+<div class="code">def generate_sql(question, user):
+    prompt = schema + question
+    if user.role == "manager":
+        # 注入区域约束，LLM 生成的 SQL 必须带 region 过滤
+        prompt = f"你只能查询{user.region}区域的数据。\n" + prompt
+    sql = llm.generate(prompt)
+
+    # 第二道防线：静态校验 SQL 是否带区域过滤
+    if user.role == "manager" and not has_region_filter(sql, user.region):
+        raise PermissionError("SQL 未限定区域")
+    return sql</div>
+
+<h3>9.4 多智能体专家协作</h3>
+<div class="code">async def experts_node(state):
+    # 三专家并行：各自只用本领域统计 + 独立角色 prompt
+    cost_analysis, safety_analysis, material_analysis = await asyncio.gather(
+        llm.ainvoke(COST_EXPERT_PROMPT + state.cost_stats),
+        llm.ainvoke(SAFETY_EXPERT_PROMPT + state.safety_stats),
+        llm.ainvoke(MATERIAL_EXPERT_PROMPT + state.material_stats),
+    )
+    # 降级：全空则透传 Skill 结果
+    if not any([cost_analysis, safety_analysis, material_analysis]):
+        return {"tool_result": state.tool_result}
+    return {"expert_analyses": [cost_analysis, safety_analysis, material_analysis]}
+
+async def coordinator_node(state):
+    # 聚合三专家意见，指出跨域关联，写回 tool_result
+    analyses = state.expert_analyses
+    final = await llm.ainvoke(COORDINATOR_PROMPT + analyses)
+    return {"tool_result": final}</div>
+
+<h3>9.5 Redis 分布式锁</h3>
+<div class="code">class RedisLock:
+    def acquire(self):
+        token = uuid4()
+        # SET key token NX EX ttl：原子获取锁
+        ok = redis.set(name, token, nx=True, ex=ttl)
+        if ok:
+            self.start_renew_daemon()  # 看门狗自动续期
+            return True
+        return False
+
+    def release(self):
+        # Lua 脚本原子校验 token + 删除，防止误删他人锁
+        lua = """
+        if redis.call("get", KEYS[1]) == ARGV[1] then
+            return redis.call("del", KEYS[1])
+        end
+        """
+        redis.eval(lua, 1, name, token)</div>
+
+<!-- 10. 非功能需求 -->
+<h2 id="nfr">十、非功能需求</h2>
+
+<table>
+<tr><th>维度</th><th>要求</th></tr>
+<tr><td>性能</td><td>单次问答响应时间 ≤ 30 秒（含多轮工具调用）；子任务 LLM 调用并行执行；三域统计用线程池 + gather 并发；统计结果 Redis 缓存命中时毫秒级返回</td></tr>
+<tr><td>可用性</td><td>核心依赖不可达时自动降级，服务不中断；关键路径无单点故障</td></tr>
+<tr><td>可解释性</td><td>回答中每个数字标注来源（预计算/SQL/文档）；Text-to-SQL 返回实际执行的 SQL</td></tr>
+<tr><td>数据安全</td><td>JWT 令牌认证；RBAC 行级隔离；SQL 只读防护；工具白名单</td></tr>
+<tr><td>可配置性</td><td>模型参数、检索 top-k、RRF/MMR 参数、最大循环轮数、审批模式开关均可配置</td></tr>
+<tr><td>可观测性</td><td>结构化日志（含 session_id/user_id）；工具调用指标；多节点耗时统计</td></tr>
+</table>
+
+<!-- 11. 实施路线图 -->
+<h2 id="roadmap">十一、实施路线图</h2>
+
+<h3>阶段一：最小闭环（已完成）</h3>
+<ul>
+  <li>FR-01 认证 + FR-02 问答 + FR-03 意图分类 + FR-05 数据查询（pandas 预计算）</li>
+  <li>FR-08 结果审核 + RBAC 基础权限</li>
+  <li>验证：成本/安全/制度三类问题均能返回带精确数字的回答</li>
+</ul>
+
+<h3>阶段二：检索与工具增强（已完成）</h3>
+<ul>
+  <li>FR-04 多路召回（分桶路由 + 双路 + RRF + MMR）</li>
+  <li>FR-05 Text-to-SQL + FR-06 ReAct 工具循环</li>
+  <li>FR-07 人工审批闸门</li>
+  <li>验证：29 个单元测试通过；RBAC 全链路隔离生效</li>
+</ul>
+
+<h3>阶段三：记忆与体验增强（已完成）</h3>
+<ul>
+  <li>FR-09 短期记忆 + FR-10 长期记忆</li>
+  <li>流式输出（SSE）+ 数据可视化（图表生成）</li>
+  <li>验证：多轮追问上下文连贯；跨会话历史可检索</li>
+</ul>
+
+<h3>阶段四：主动预警（分级已落地，推送规划中）</h3>
+<ul>
+  <li><strong>三级预警分级（已落地）</strong>：成本超支、安全隐患、材料到货滞后均按严重程度标注黄/橙/红三级，在用户查询时由程序判定并注入回答</li>
+  <ul>
+    <li>成本：预算执行率 ≥105% 黄 / ≥110% 橙 / ≥115% 红</li>
+    <li>安全：重大未闭环 = 红 / 较大未闭环 = 橙 / 一般超 30 天未闭环 = 黄</li>
+    <li>材料：到货滞后 1-5 天 黄 / 5-10 天 橙 / >10 天 红</li>
+  </ul>
+  <li><strong>定时任务（规划中）</strong>：定期检测成本超支、安全隐患超期、材料到货滞后</li>
+  <li><strong>推送渠道（规划中）</strong>：企业微信/钉钉/邮件</li>
+</ul>
+
+<h3>阶段五：多智能体协作与架构优化（已完成）</h3>
+<ul>
+  <li><strong>多智能体专家协作（已落地）</strong>：成本/安全/材料三专家并行分析 + 协调者聚合，从单智能体流水线升级为多专家协作模式</li>
+  <li><strong>Redis 缓存（已落地）</strong>：统计结果缓存 TTL 300s，替代 lru_cache，支持 CSV 更新后自动失效</li>
+  <li><strong>分布式锁（已落地）</strong>：灌库、用户创建、长期记忆写入加 Redis 分布式锁（SETNX + token 校验 + 看门狗续期）</li>
+  <li><strong>异步并发优化（已落地）</strong>：pandas 统计用 asyncio.to_thread + gather 并发，避免阻塞事件循环</li>
+  <li><strong>Entity/Model/Mapper 三层分离（已落地）</strong>：ORM 模型与业务实体分离，通过 mapper 转换，解耦持久化层与业务层</li>
+  <li>验证：29 个单元测试通过；缓存命中/锁获取释放/异步并发统计均验证正常</li>
+</ul>
+
+<!-- 12. 风险与缓解 -->
+<h2 id="risk">十二、风险与缓解</h2>
+
+<table>
+<tr><th>风险</th><th>影响</th><th>缓解措施</th></tr>
+<tr><td>LLM 生成错误 SQL</td><td>查询结果错误</td><td>三层只读防护 + 报错自愈重试 + RBAC 静态校验</td></tr>
+<tr><td>RAG 检索到过时数字</td><td>回答数字不准确</td><td>数字只从 pandas/SQL 来，文档仅作背景；结构化数据不进向量库</td></tr>
+<tr><td>区域经理越权查询</td><td>数据泄露</td><td>RBAC 贯穿 SQL/RAG/统计/图表所有出口；JWT 身份不可被请求体覆盖</td></tr>
+<tr><td>依赖服务不可达</td><td>功能不可用</td><td>五级降级策略，每层依赖独立降级，不阻塞主流程</td></tr>
+<tr><td>用户对 LLM 回答过度信任</td><td>决策失误</td><td>回答标注数据来源和 SQL；建议仅供参考，关键决策需人工确认</td></tr>
+</table>
+
+<!-- 13. 成功度量 -->
+<h2 id="metrics">十三、成功度量</h2>
+
+<table>
+<tr><th>指标</th><th>目标值</th><th>度量方式</th></tr>
+<tr><td>回答数字准确率</td><td>≥ 95%</td><td>评测集 20 题，对比程序计算结果</td></tr>
+<tr><td>RBAC 隔离有效率</td><td>100%</td><td>区域经理无法获取其他区域数据</td></tr>
+<tr><td>意图分类准确率</td><td>≥ 90%</td><td>评测集中分类结果与预期一致</td></tr>
+<tr><td>检索命中率</td><td>≥ 85%</td><td>top-3 包含相关文档的比例</td></tr>
+<tr><td>平均响应时间</td><td>≤ 30 秒</td><td>单次问答端到端耗时</td></tr>
+<tr><td>降级可用性</td><td>100%</td><td>任一依赖不可达时服务仍可响应</td></tr>
+</table>
+
+<!-- 14. 待确认问题 -->
+<h2 id="open">十四、待确认问题</h2>
+
+<div class="assumption">最大轮数（MAX_TOOL_ROUNDS）的具体数值：当前为防止死循环设置上限，需根据实际场景调整</div>
+
+<div class="assumption">审批模式（APPROVAL_MODE）的默认开关：需确认生产环境是否默认开启人工审批</div>
+
+<div class="assumption">会话超时时间（SESSION_TTL）的具体值</div>
+
+<div class="assumption">长期记忆保留的历史问答数量上限</div>
+
+<div class="assumption">主动预警阶段：三级预警分级（查询时）已落地；定时检测与消息推送是否纳入当前迭代范围待确认</div>
+
+</div>
+</body>
+</html>

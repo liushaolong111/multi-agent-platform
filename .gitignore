@@ -15,5 +15,7 @@ dump.rdb
 evals/report.json
 # 数据采集增量缓存（运行时生成）
 data/.collect_state.json
+# 业务库同步生成的摘要（运行时生成，由 sync_business_to_rag.py 重建）
+data/sync_*.md
 # 本地个人复盘文档，不入库
 docs/OPTIMIZATION.md

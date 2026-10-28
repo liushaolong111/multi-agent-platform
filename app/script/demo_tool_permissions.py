@@ -16,7 +16,7 @@ sys.path.insert(
 )
 
 from app.agent.nodes.text2sql import set_current_user  # noqa: E402
-from app.agent.nodes.tool import query_database, query_feedback, read_file  # noqa: E402
+from app.agent.nodes.tool import query_database, query_safety, read_file  # noqa: E402
 from app.service.permission import (  # noqa: E402
     data_scope_prompt,
     scoped_region,
@@ -26,9 +26,9 @@ from app.service.permission import (  # noqa: E402
 REGIONS = ["华东", "华北", "西南", "华南"]
 
 USERS = [
-    ("admin    (管理员)", {"role": "admin", "region": ""}),
-    ("sales_hd (华东销售)", {"role": "sales", "region": "华东"}),
-    ("viewer   (只读)", {"role": "viewer", "region": ""}),
+    ("admin      (集团管理员)", {"role": "admin", "region": ""}),
+    ("manager_hd (华东区域经理)", {"role": "manager", "region": "华东"}),
+    ("viewer     (只读)", {"role": "viewer", "region": ""}),
 ]
 
 
@@ -48,11 +48,11 @@ def demo_tool_matrix():
         set_current_user(user)
         print(f"\n用户：{name}")
         for label, call in [
-            ("query_database()           ", lambda: query_database.invoke({})),
-            ("query_feedback()           ", lambda: query_feedback.invoke({})),
-            ("read_file(sales_q1.csv)    ", lambda: read_file.invoke({"filename": "sales_q1.csv"})),
-            ("read_file(financial_..md)  ", lambda: read_file.invoke({"filename": "financial_summary.md"})),
-            ("read_file(product_info.md) ", lambda: read_file.invoke({"filename": "product_info.md"})),
+            ("query_database()              ", lambda: query_database.invoke({})),
+            ("query_safety()                ", lambda: query_safety.invoke({})),
+            ("read_file(sync_cost_..md)     ", lambda: read_file.invoke({"filename": "sync_cost_summary.md"})),
+            ("read_file(项目成本管理办法.md) ", lambda: read_file.invoke({"filename": "项目成本管理办法.md"})),
+            ("read_file(宝冶项目周报..md)   ", lambda: read_file.invoke({"filename": "宝冶项目周报样例.md"})),
         ]:
             print(f"   {label} -> {summarize(call())}")
 
@@ -61,19 +61,19 @@ def demo_sql_guard():
     print("\n" + "=" * 78)
     print("第 1+2 层 SQL 通道：prompt 硬约束 + 执行前静态越权校验")
     print("=" * 78)
-    sales = {"role": "sales", "region": "华东"}
+    manager = {"role": "manager", "region": "华东"}
 
-    print("\n[sales_hd 的 prompt 约束片段]")
-    print("   " + data_scope_prompt(sales).replace("\n", "\n   "))
+    print("\n[manager_hd 的 prompt 约束片段]")
+    print("   " + data_scope_prompt(manager).replace("\n", "\n   "))
 
     cases = [
-        ("SELECT region, SUM(amount) FROM sales_records GROUP BY region", "漏写区域过滤 → 越权"),
-        ("SELECT SUM(amount) FROM sales_records WHERE region = '华东'", "带本区域过滤 → 合规"),
-        ("SELECT SUM(amount) FROM sales_records WHERE region = '华北'", "查别人区域 → 越权"),
+        ("SELECT region, SUM(amount) FROM cost_records GROUP BY region", "漏写区域过滤 → 越权"),
+        ("SELECT SUM(amount) FROM cost_records WHERE region = '华东'", "带本区域过滤 → 合规"),
+        ("SELECT SUM(amount) FROM cost_records WHERE region = '华北'", "查别人区域 → 越权"),
     ]
-    print("\n[执行前校验 sql_within_scope(sql, sales_hd)]")
+    print("\n[执行前校验 sql_within_scope(sql, manager_hd)]")
     for sql, note in cases:
-        ok = sql_within_scope(sql, sales)
+        ok = sql_within_scope(sql, manager)
         verdict = "✅ 允许执行" if ok else "⛔ 拒绝执行"
         print(f"   {verdict}  ({note})")
         print(f"      {sql}")
@@ -94,5 +94,5 @@ if __name__ == "__main__":
     demo_sql_guard()
     print("\n" + "=" * 78)
     print("补充：高危工具 query_business_database 由 APPROVAL_MODE=true 触发人工审批闸门")
-    print("      （该闸门按工具复杂度而非角色触发，admin 与 sales 一视同仁）")
+    print("      （该闸门按工具复杂度而非角色触发，admin 与 manager 一视同仁）")
     print("=" * 78)

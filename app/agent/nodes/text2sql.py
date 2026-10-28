@@ -46,7 +46,8 @@ _SQL_PROMPT = """你是一个 SQL 专家。根据业务库 schema，把用户的
 - 只输出 SQL 本身，不要任何解释、不要用 markdown 代码块包裹
 - 只允许 SELECT（可用 WITH 子查询），禁止 INSERT/UPDATE/DELETE/DROP
 - 聚合查询记得 GROUP BY；金额保留 2 位小数用 ROUND(x, 2)
-- 日期过滤用 sale_date，如 WHERE sale_date >= '2026-01-01' AND sale_date < '2026-04-01'
+- 月份过滤用 cost_month，如 WHERE cost_month >= '2026-01' AND cost_month <= '2026-06'
+- 日期过滤用 found_date / start_date，如 WHERE found_date >= '2026-01-01'
 - 限制返回行数：普通查询加 LIMIT 20，聚合统计可加 LIMIT 100
 
 【用户问题】
@@ -81,7 +82,7 @@ def _extract_sql(llm_output: str) -> str:
 
 
 def generate_sql(question: str, user: dict | None = None) -> str:
-    """LLM 生成 SQL；失败返回空串。sales 角色注入区域数据权限硬约束。"""
+    """LLM 生成 SQL；失败返回空串。manager 角色注入区域数据权限硬约束。"""
     scope = data_scope_prompt(user or _current_user.get())
     prompt = _SQL_PROMPT.format(schema=get_schema_description(), question=question)
     if scope:
@@ -92,13 +93,13 @@ def generate_sql(question: str, user: dict | None = None) -> str:
 
 @tool
 def query_business_database(question: str) -> str:
-    """用自然语言查询企业业务数据库（销售流水、客户反馈）。
+    """用自然语言查询工程项目业务数据库（项目、成本、质量安全问题）。
 
-    适用于需要精确数字、排名、占比、趋势、环比等事实性数据的问题。
+    适用于需要精确数字、排名、占比、趋势、预算执行率等事实性数据的问题。
     内部会把问题转成 SQL 执行真实数据库查询，返回精确结果。
 
     Args:
-        question: 自然语言问题，如「2026年Q1各产品的销售额排名」
+        question: 自然语言问题，如「2026 年上半年各区域的项目成本排名」
     """
     metrics.record_tool("text2sql_generate")
     user = _current_user.get()

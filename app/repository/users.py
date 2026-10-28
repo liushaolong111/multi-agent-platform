@@ -7,6 +7,9 @@ import hmac
 import logging
 import os
 
+from app.client.lock import RedisLock
+from app.entity.user_entity import UserEntity
+from app.mapper.user_mapper import UserMapper
 from app.model.base import Base
 from app.model.user import VALID_ROLES, User
 
@@ -37,7 +40,11 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 def authenticate(username: str, password: str) -> dict | None:
-    """校验用户名密码，成功返回用户上下文 dict，失败返回 None。"""
+    """校验用户名密码，成功返回用户上下文 dict，失败返回 None。
+
+    内部用 mapper 把 ORM Model 转为 Entity，再提取认证所需字段返回，
+    避免把 password_hash 等敏感字段暴露到业务层。
+    """
     from app.repository.business import business_engine, get_business_session
 
     if not business_engine:
@@ -50,10 +57,11 @@ def authenticate(username: str, password: str) -> dict | None:
     try:
         user = session.query(User).filter_by(username=username).first()
         if user and verify_password(password, user.password_hash):
+            entity: UserEntity = UserMapper.to_entity(user)
             return {
-                "user_id": user.username,
-                "role": user.role,
-                "region": user.region or "",
+                "user_id": entity.username,
+                "role": entity.role,
+                "region": entity.region or "",
             }
         return None
     except Exception as e:
@@ -64,7 +72,7 @@ def authenticate(username: str, password: str) -> dict | None:
 
 
 def create_user(username: str, password: str, role: str, region: str = "") -> bool:
-    """创建/覆盖用户（种子脚本用）。"""
+    """创建/覆盖用户（entity → mapper → model 分层 + 分布式锁防并发冲突）。"""
     from app.repository.business import business_engine, get_business_session
 
     if role not in VALID_ROLES:
@@ -73,27 +81,28 @@ def create_user(username: str, password: str, role: str, region: str = "") -> bo
         return False
     Base.metadata.create_all(business_engine)
 
-    session = get_business_session()
-    try:
-        existing = session.query(User).filter_by(username=username).first()
-        if existing:
-            existing.password_hash = hash_password(password)
-            existing.role = role
-            existing.region = region
-        else:
-            session.add(
-                User(
+    # 分布式锁：防止并发创建同名用户导致唯一键冲突或重复插入
+    with RedisLock(f"user:create:{username}", ttl=10, acquire_timeout=5):
+        session = get_business_session()
+        try:
+            existing = session.query(User).filter_by(username=username).first()
+            if existing:
+                existing.password_hash = hash_password(password)
+                existing.role = role
+                existing.region = region
+            else:
+                entity = UserEntity(
                     username=username,
                     password_hash=hash_password(password),
                     role=role,
                     region=region,
                 )
-            )
-        session.commit()
-        return True
-    except Exception as e:
-        session.rollback()
-        logger.warning("[Auth] 创建用户失败：%s", e)
-        return False
-    finally:
-        session.close()
+                session.add(UserMapper.to_model(entity))
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            logger.warning("[Auth] 创建用户失败：%s", e)
+            return False
+        finally:
+            session.close()

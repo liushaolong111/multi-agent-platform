@@ -411,11 +411,11 @@ async def ui():
     <button id="loginBtn">登录</button>
     <span id="loginStatus" class="login-status">未登录（以 admin 身份运行）</span>
     <span class="quick" data-u="admin" data-p="admin123">管理员</span>
-    <span class="quick" data-u="sales_hd" data-p="sales123">华东销售</span>
+    <span class="quick" data-u="manager_hd" data-p="manager123">华东区域经理</span>
     <span class="quick" data-u="viewer" data-p="viewer123">只读</span>
   </div>
   <div class="input-row">
-    <input id="msg" placeholder="输入任务，例如：分析上季度销售数据" value="分析上季度销售数据" />
+    <input id="msg" placeholder="输入任务，例如：分析 2026 年上半年项目成本" value="分析 2026 年上半年项目成本" />
     <button id="send">发送</button>
   </div>
 

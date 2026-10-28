@@ -5,6 +5,7 @@ from datetime import datetime
 from sqlalchemy import JSON, Column, DateTime, Integer, String, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+from app.client.lock import RedisLock
 from app.conf import config
 
 logger = logging.getLogger(__name__)
@@ -38,17 +39,21 @@ if engine:
 
 
 def store_long_term(user_id: str, session_id: str, content: dict):
-    """存储长期记忆；数据库未配置时静默跳过。"""
+    """存储长期记忆；数据库未配置时静默跳过。
+
+    分布式锁：防止同一用户并发写入导致会话记忆乱序。
+    """
     if not Session:
         logger.warning("[Memory] 长期记忆未配置，跳过存储。")
         return
     try:
-        with Session() as db:
-            mem = ConversationMemory(
-                user_id=user_id, session_id=session_id, content=content
-            )
-            db.add(mem)
-            db.commit()
+        with RedisLock(f"memory:store:{user_id}", ttl=10, acquire_timeout=5):
+            with Session() as db:
+                mem = ConversationMemory(
+                    user_id=user_id, session_id=session_id, content=content
+                )
+                db.add(mem)
+                db.commit()
     except Exception as e:
         logger.warning("[Memory] 长期记忆写入失败：%s", e)
 

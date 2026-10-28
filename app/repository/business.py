@@ -52,22 +52,67 @@ def get_business_session():
 
 
 def get_schema_description() -> str:
-    """返回业务库 schema 的自然语言描述，注入 Text-to-SQL 的 prompt。"""
-    return """【业务数据库 schema】（PostgreSQL/SQLite 兼容语法）
+    """返回业务库 schema 的自然语言描述，注入 Text-to-SQL 的 prompt。
 
-表 1：sales_records（销售流水，一行一笔销售）
-  - sale_date  DATE     销售日期，如 2026-03-15
-  - product    VARCHAR  产品名称（如：星辰CRM、星辰ERP、星辰BI）
-  - region     VARCHAR  销售区域（如：华北、华东、华南、西南）
-  - amount     FLOAT    销售额，单位：元
-  - quantity   INTEGER  销量，单位：件
+    按当前连接方言附加日期函数提示，避免模型在 MySQL 上生成 strftime 之类的
+    SQLite 专有函数。
+    """
+    dialect = business_engine.dialect.name if business_engine else "unknown"
+    hint = {
+        "mysql": "日期格式化用 DATE_FORMAT(found_date, '%Y-%m')",
+        "postgresql": "日期格式化用 to_char(found_date, 'YYYY-MM')",
+        "sqlite": "日期格式化用 strftime('%Y-%m', found_date)",
+    }.get(dialect)
 
-表 2：feedback_records（客户反馈，一行一条反馈）
-  - customer    VARCHAR  客户名称
-  - rating      INTEGER  评分，1-5 整数
-  - issue_type  VARCHAR  问题类型（如：功能缺陷、响应速度、易用性）
-  - description TEXT     问题描述
-  - created_at  DATETIME 反馈时间"""
+    body = """表 1：projects（工程项目，一行一个项目）
+  - project_code       VARCHAR  项目编号，如 BY-HD-001
+  - project_name       VARCHAR  项目名称
+  - region             VARCHAR  区域公司：华东 / 华北 / 华南 / 西南
+  - manager_name       VARCHAR  项目经理
+  - status             VARCHAR  项目状态：在建 / 竣工 / 停工
+  - contract_amount    FLOAT    合同金额，单位：元
+  - start_date         DATE     开工日期，如 2025-03-01
+  - planned_end_date   DATE     计划竣工日期
+
+表 2：cost_records（成本流水，一行 = 项目 × 月份 × 成本类别）
+  - project_code       VARCHAR  项目编号
+  - project_name       VARCHAR  项目名称
+  - region             VARCHAR  区域公司：华东 / 华北 / 华南 / 西南
+  - cost_month         VARCHAR  成本月份，字符串 '2026-01' ~ '2026-06'，可直接比较大小
+  - cost_category      VARCHAR  成本类别：材料 / 人工 / 机械 / 分包
+  - amount             FLOAT    实际成本，单位：元
+  - budget_amount      FLOAT    预算金额，单位：元
+
+表 3：safety_issues（质量安全问题，一行一条隐患）
+  - project_code       VARCHAR  项目编号
+  - project_name       VARCHAR  项目名称
+  - region             VARCHAR  区域公司：华东 / 华北 / 华南 / 西南
+  - issue_type         VARCHAR  问题类型：安全 / 质量
+  - severity           VARCHAR  严重程度：一般 / 较大 / 重大
+  - status             VARCHAR  整改状态：待整改 / 整改中 / 已闭环
+  - found_date         DATE     发现日期
+  - closed_date        DATE     整改完成日期，未闭环时为 NULL
+  - description        TEXT     问题描述
+
+表 4：material_records（材料库存，一行 = 项目 × 材料）
+  - project_code       VARCHAR  项目编号
+  - project_name       VARCHAR  项目名称
+  - region             VARCHAR  区域公司：华东 / 华北 / 华南 / 西南
+  - material_category  VARCHAR  材料类别：钢结构 / 预制构件 / 水泥 / 钢筋 / 防水材料 / 幕墙 / 木材 / 砌块 / 机电设备 / 保温材料
+  - material_name      VARCHAR  材料名称
+  - specification      VARCHAR  规格型号
+  - unit               VARCHAR  单位
+  - stock_qty          INT      库存数量
+  - eta_date           DATE     预计到货日期
+  - plan_use_date      DATE     计划使用日期
+  - supplier           VARCHAR  供应商
+
+滞后判定：当 eta_date > plan_use_date 时，材料到货滞后，影响天数 = eta_date - plan_use_date"""
+
+    header = f"【业务数据库 schema】（当前方言：{dialect}）\n"
+    if hint:
+        header += f"  语法提示：{hint}。\n"
+    return header + body
 
 
 def validate_readonly_sql(sql: str) -> str | None:

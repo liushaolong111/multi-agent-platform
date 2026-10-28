@@ -68,7 +68,7 @@ async def get_current_user(authorization: str = Header(default="")) -> dict:
     """FastAPI 依赖：解析当前用户。
 
     - 带合法 Bearer token：一律以 token 身份为准（即使 AUTH_ENABLED=false）。
-      这样 UI 登录销售账号后，数据权限立刻生效，无需为演示改服务端开关。
+      这样 UI 登录区域经理账号后，数据权限立刻生效，无需为演示改服务端开关。
     - 不带 token：AUTH_ENABLED=false 回退匿名管理员（本地开发）；
       =true 抛 401（此时 token 是强制的）。
     """

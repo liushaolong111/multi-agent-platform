@@ -1,16 +1,18 @@
-# 🤖 Multi-Agent Platform
+# 🏗️ 智建 Agent · 工程多智能体分析平台
 
-[![CI](https://github.com/liushaolong111/multi-agent-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/liushaolong111/multi-agent-platform/actions/workflows/ci.yml)
+[![CI](https://github.com/liushaolong111/multi-agent-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/liushaolong111/multi-agent-platform)
 
-> 基于 **LangGraph + RAG + 双层记忆** 构建的企业级多智能体协作平台
+> 基于 **LangGraph + RAG + 双层记忆 + MCP 工具总线** 构建的工程多智能体协作平台「智建 Agent」
 
-用户输入任务后，系统自动分类、拆解、检索知识库、调用工具、分析、审核，最终给出**可溯源**的回答。
+用户输入任务后，系统自动分类、拆解、检索工程管理制度与项目数据、调用工具（Text-to-SQL / 成本统计 / 安全统计）、分析、审核，最终给出**可溯源**的回答。
+
+> **说明**：本项目是个人作品，业务原型取自工程项目管理（成本、质量安全、区域公司权限）的真实痛点，数据为模拟样本，**不代表任何企业的真实项目或线上系统**。
 
 ## ✨ 核心特性
 
 - **ReAct 工具循环**：Router → Planner → Skill → ToolDecide ⇄ ToolExec → Reviewer。模型看到工具执行结果（Observation）后再决定下一轮，支持多步探索；达到轮数上限（`MAX_TOOL_ROUNDS`）自动熔断，防止无限循环
 - **人工审批闸门（HITL）**：高危工具（查业务库）执行前经 LangGraph `interrupt()` 挂起，**人工批准才放行**，断点由 checkpointer 持久化，`POST /chat/approve` 从断点恢复
-- **JWT 认证 + RBAC 行级隔离**：登录签发 token（HS256），`admin / sales / viewer` 三角色；销售只能看本区域数据，权限作为**贯穿所有数据出口的不变量**（SQL / 预计算统计 / 知识检索 / 工具 / 图表共用同一判定）
+- **JWT 认证 + RBAC 行级隔离**：登录签发 token（HS256），`admin / manager / viewer` 三角色；区域经理只能看本区域数据，权限作为**贯穿所有数据出口的不变量**（SQL / 预计算统计 / 知识检索 / 工具 / 图表共用同一判定）
 - **Text-to-SQL 真查库**：查询业务库由 LLM 生成 SQL——三层只读防护 + 执行前静态越权校验 + 报错自愈重试，能答的问题集合 = 整个 schema 能表达的所有查询
 - **RAG 检索增强**：FAISS / Qdrant 双后端（工厂模式，Qdrant 不可达自动降级 FAISS），bge-small-zh 本地向量化，检索按 metadata 过滤
 - **双层记忆**：Redis 短期记忆（会话上下文）+ SQLAlchemy 长期记忆（PostgreSQL/SQLite 可配置，跨会话历史）
@@ -21,7 +23,7 @@
 - **可观测性**：LangSmith 链路追踪（可选）+ `/metrics` 端点实时暴露 token 用量与各节点延迟
 - **流式输出**：SSE 逐节点推送，用户实时看到 AI 的思考过程
 - **Docker 化部署**：`docker compose` 一条命令启动 5 服务（api / redis / postgres / qdrant + seed 初始化）
-- **多维数据分析**：支持环比增长、区域×产品交叉表、月度趋势、客户反馈量化统计
+- **多维数据分析**：支持项目成本排名、区域×成本类别交叉表、月度趋势、预算执行率、质量安全问题闭环率
 
 ## 🏗️ 架构设计
 
@@ -87,7 +89,7 @@
 | 向量检索 | **FAISS / Qdrant** | 工厂模式双后端；Qdrant 原生 payload 过滤，不可达自动降级 FAISS |
 | 短期记忆 | **Redis** | 会话状态，TTL 自动过期；不可达时降级进程内存储 |
 | 长期记忆 | **SQLAlchemy** | 跨会话持久化，PostgreSQL/SQLite 通过 `DATABASE_URL` 一键切换 |
-| 业务数据 | **PostgreSQL + Text-to-SQL** | LLM 生成 SQL 查真实业务表，三层只读防护 + 执行前静态越权校验 |
+| 业务数据 | **MySQL / PostgreSQL + Text-to-SQL** | LLM 生成 SQL 查真实业务表（项目/成本/安全问题），三层只读防护 + 执行前静态越权校验 |
 | 认证 / 权限 | **PyJWT + RBAC** | HS256 token；PBKDF2-HMAC-SHA256 密码哈希；三角色行级数据隔离 |
 | 工具调用 | **原生 Function Calling** | DeepSeek `bind_tools`，结构化决策、免除 JSON 解析兜底 |
 | 结构化日志 | **structlog** | 与 stdlib 桥接，contextvars 全链路追踪，`LOG_FORMAT=json` 可直接采集 |
@@ -131,8 +133,8 @@ docker compose --profile setup up seed
 
 | 用户名 | 密码 | 角色 | 数据权限 |
 |--------|------|------|---------|
-| `admin` | `admin123` | 管理员 | 全部数据 |
-| `sales_hd` | `sales123` | 销售（华东） | 仅华东区域数据 |
+| `admin` | `admin123` | 集团管理员 | 全部区域数据 |
+| `manager_hd` | `manager123` | 区域经理（华东） | 仅华东区域数据 |
 | `viewer` | `viewer123` | 只读 | 全部数据但只读 |
 
 ### 企业模式（可选）
@@ -164,30 +166,32 @@ docker compose logs -f api # 实时查看日志
 
 ```
 [路由]      任务分类：data_analysis
-[规划]      拆解为 2 个子任务：1. 计算 Q1 总销售额与环比  2. 按区域×产品找出贡献最大组合
+[规划]      拆解为 2 个子任务：1. 统计 2026 上半年项目总成本  2. 找出成本最高的项目与区域
 [分析]      已完成知识检索与分析（2 个子任务）
 [工具决策]  决定调用：query_business_database
 [人工审批]  已批准放行                ← APPROVAL_MODE=true 时出现（否则直接执行）
 [工具执行]  第 1 轮：执行了 1 个工具调用
 [工具决策]  无需额外工具调用（ReAct 收敛）
-[审核通过]  Q1 2026 总销售额 ...
+[审核通过]  2026 上半年总成本 197,664,220 元 ...
 ```
 
-登录身份会决定数据可见范围：用 `sales_hd` 登录后问"各区域销售额"，答案只包含**华东**；换 `admin` 登录则可见全部四区域。
+登录身份会决定数据可见范围：用 `manager_hd` 登录后问"各区域成本"，答案只包含**华东**；换 `admin` 登录则可见全部四区域。
 
 ### 实际回答示例
 
-**问**：Q1 销售额环比 Q4 增长了多少？哪个区域哪款产品贡献最大？
+**问**：2026 年上半年项目成本整体情况如何？哪个区域最高？
 
 **答**：
-> Q1 2026 总销售额为 **10,604,477 元**，Q4 2025 为 **9,527,929 元**，环比增长率 **+11.3%**。
+> 2026 上半年实际成本合计 **197,664,220 元**，预算 **205,690,920 元**，整体预算执行率 **96.1%**。
 >
-> 贡献最大的区域-产品组合是**华东-星辰财务**（1,891,250 元，占比 17.8%）。
+> 成本最高的区域是**华南**（77,064,000 元，占比 39.0%），其中**深圳前海金融大厦项目**以 56,784,000 元居各项目之首；成本类别中**材料**占比最高（42.0%）。
 
-**问**：客户满意度怎么样？最需要改进的是什么？
+**问**：质量安全问题整改情况怎么样？最需要关注什么？
 
 **答**：
-> 客户平均评分 **3.64/5.0**，好评率 60%。得分最低的维度是**系统稳定性**（2.5 分，4 条反馈），其次是产品功能（3.0）。建议优先排查稳定性问题并建立故障复盘机制。
+> 共记录质量安全问题 **30 条**（安全 18 条、质量 12 条），已闭环 **19 条**，闭环率 **63.3%**。
+>
+> 其中**重大隐患 8 条**，按制度要求应立即停工并 24 小时内上报区域公司；当前闭环率低于管理目标 95%，建议优先清理待整改项并按项目复盘重复问题。
 
 ### API 接口
 
@@ -195,20 +199,20 @@ docker compose logs -f api # 实时查看日志
 # 1. 登录（企业模式必做）→ 拿 JWT
 curl -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username": "sales_hd", "password": "sales123"}'
-# → {"access_token": "eyJ...", "token_type": "bearer", "user": {"user_id":"sales_hd","role":"sales","region":"华东"}}
+  -d '{"username": "manager_hd", "password": "manager123"}'
+# → {"access_token": "eyJ...", "token_type": "bearer", "user": {"user_id":"manager_hd","role":"manager","region":"华东"}}
 
 # 2. 普通接口（一次性返回）；带 token 时身份一律以 token 为准
 curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <token>" \
-  -d '{"message": "分析销售数据", "session_id": "demo1"}'
+  -d '{"message": "分析 2026 年上半年项目成本", "session_id": "demo1"}'
 
 # 3. 流式接口（SSE 实时推送）
 curl -N -X POST http://localhost:8000/chat/stream \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <token>" \
-  -d '{"message": "分析销售数据", "session_id": "demo1"}'
+  -d '{"message": "分析 2026 年上半年项目成本", "session_id": "demo1"}'
 
 # 4. 人工审批（APPROVAL_MODE=true 且上一请求返回 PENDING_APPROVAL 时）
 curl -X POST http://localhost:8000/chat/approve \
@@ -226,20 +230,20 @@ API 文档：`http://localhost:8000/docs`
 ```bash
 # 第一轮
 curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
-  -d '{"message": "Q1 销售额最高的产品是哪个？", "session_id": "demo1"}'
-# → 星辰财务（5,383,743 元，占比 50.8%）
+  -d '{"message": "2026 年上半年成本最高的项目是哪个？", "session_id": "demo1"}'
+# → 深圳前海金融大厦项目（56,784,000 元）
 
 # 第二轮（"它"指代第一轮结论，短期记忆提供上下文）
 curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" \
-  -d '{"message": "它在华东区域的销售额是多少？", "session_id": "demo1"}'
-# → 星辰财务在华东区域销售额为 1,891,250 元
+  -d '{"message": "它属于哪个区域？", "session_id": "demo1"}'
+# → 深圳前海金融大厦项目属于华南区域
 ```
 
 跨会话后，长期记忆（`DATABASE_URL` 指向的 PostgreSQL/SQLite）仍会保留审核通过的问答，新会话可召回。
 
 ## 📏 效果评测
 
-"减少幻觉"不能只是口号。`evals/` 目录提供 20 题带标准答案的评测集（覆盖数据分析、客户反馈、知识问答三类），改动 prompt / 模型 / 检索参数前后跑一遍即可量化回归：
+"减少幻觉"不能只是口号。`evals/` 目录提供 20 题带标准答案的评测集（覆盖项目成本分析、质量安全统计、制度知识问答三类），改动 prompt / 模型 / 检索参数前后跑一遍即可量化回归：
 
 ```bash
 # 关键词评分（确定性规则，零额外成本）
@@ -260,8 +264,8 @@ python evals/run_eval.py --gate
 ```
 总体正确率：18/20 = 90.0%
   - data_analysis: 9/10 = 90.0%
-  - feedback: 4/5 = 80.0%
-  - knowledge_query: 5/5 = 100.0%
+  - safety: 5/6 = 83.3%
+  - knowledge_query: 4/4 = 100.0%
 报告已保存：evals/report.json
 ```
 
@@ -279,7 +283,7 @@ LANGSMITH_API_KEY=lsv2_pt_你的key
 **结构化日志（内置）**：`LOG_FORMAT=json` 时每行一个 JSON。请求入口绑定 `request_id`，`/chat` 再绑 `session_id` / `user_id`——该请求链路里任何角落（图节点、工具、httpx）打出的日志都自动携带这三个字段，按 `request_id` 一搜即得完整时间线：
 
 ```json
-{"event": "[Auth] 用户登录成功：sales_hd（sales）", "request_id": "42dfd091054f", "logger": "api.auth", "level": "info", "timestamp": "2026-10-15T09:45:13.817667"}
+{"event": "[Auth] 用户登录成功：manager_hd（manager）", "request_id": "42dfd091054f", "logger": "api.auth", "level": "info", "timestamp": "2026-10-15T09:45:13.817667"}
 ```
 
 **运行指标（内置，零依赖）**：`GET /metrics` 实时返回进程内聚合的指标快照——
@@ -299,14 +303,14 @@ LANGSMITH_API_KEY=lsv2_pt_你的key
 
 **认证（JWT）**：`POST /auth/login` 校验用户名密码（PBKDF2-HMAC-SHA256，恒定时间比较防时序攻击）后签发 HS256 token，payload 携带 `sub / role / region`；`AUTH_ENABLED=true` 时 `/chat`、`/chat/stream`、`/chat/approve` 必须带 `Authorization: Bearer <token>`。**只要带了合法 token，身份一律以 token 为准——请求体里自报的 `user_id` 无法伪造身份**。
 
-**授权（RBAC 行级隔离）**：`admin / sales / viewer` 三角色，`sales` 只能看本区域数据。权限不是某个功能的属性，而是**贯穿所有数据出口的不变量**，五处共用同一个 `scoped_region(role, region)` 判定：
+**授权（RBAC 行级隔离）**：`admin / manager / viewer` 三角色，`manager`（区域公司工程管理员）只能看本区域数据。权限不是某个功能的属性，而是**贯穿所有数据出口的不变量**，五处共用同一个 `scoped_region(role, region)` 判定：
 
 | # | 数据出口 | 隔离手段 |
 |---|---------|---------|
-| 1 | Text-to-SQL | prompt 层权限硬约束 + 执行前静态越权校验（`sql_within_scope`） |
-| 2 | 预计算统计 | `compute_stats(region)` 只算本区域（含环比基数同步过滤） |
-| 3 | 知识检索 | chunk `visibility = public / company` + `rag_scope_filter` metadata 过滤 |
-| 4 | 工具调用 | `query_database` / `query_feedback` / `read_file` 出口按角色判定 |
+| 1 | Text-to-SQL | prompt 层权限硬约束 + 执行前静态越权校验（`sql_within_scope`，覆盖 projects / cost_records / safety_issues 三张表） |
+| 2 | 预计算统计 | `compute_stats(region)` / `compute_safety_stats(region)` 只算本区域 |
+| 3 | 知识检索 | chunk `visibility = public / company` + `rag_scope_filter` metadata 过滤（公司级同步摘要 manager 不可检索） |
+| 4 | 工具调用 | `query_database` / `query_safety` / `read_file` 出口按角色判定 |
 | 5 | 图表生成 | `_draw_chart(region)` 只统计本区域，标题带区域 |
 
 **高危操作人工审批（HITL）**：`APPROVAL_MODE=true` 时，含高危工具（`query_business_database`）的调用经 `interrupt()` 挂起，`POST /chat/approve` 从断点恢复；审批端点**校验会话归属——只有发起该会话的用户能审批**，避免"知道 session_id 就能放行高危操作"。
@@ -337,17 +341,17 @@ multi-agent-platform/
 │   │       ├── tool_exec.py    # ReAct 执行：执行工具 + 观测回喂
 │   │       ├── approval.py     # HITL：interrupt 挂起 / resume 放行
 │   │       ├── text2sql.py     # Text-to-SQL：生成 + 三层只读防护 + 越权校验 + 自愈重试
-│   │       ├── tool.py         # 工具注册表（@tool：查库 / 反馈 / 读文件 / 图表）
+│   │       ├── tool.py         # 工具注册表（@tool：查库 / 成本统计 / 安全统计 / 读文件 / 图表）
 │   │       └── reviewer.py     # 结果审核 + 写入长期记忆
 │   ├── client/                 # 外部客户端
 │   │   ├── short_term.py       # Redis 短期记忆（不可达时降级进程内存储）
 │   │   └── vectorstore.py      # FAISS / Qdrant 工厂 + 统一过滤检索入口
 │   ├── conf/
 │   │   └── config.py           # 统一配置管理
-│   ├── model/                  # 实体层（ORM）
+│   ├── model/                  # ORM 模型层（表映射）
 │   │   ├── base.py             # declarative Base
-│   │   ├── user.py             # 用户表 + 角色常量
-│   │   └── business.py         # 销售流水 / 客户反馈表
+│   │   ├── user.py             # 用户表 + 角色常量（admin / manager / viewer）
+│   │   └── business.py         # 工程项目 / 成本流水 / 质量安全问题表
 │   ├── repository/             # 仓储层
 │   │   ├── business.py         # 业务库连接 + schema + 只读 SQL 执行
 │   │   ├── users.py            # 用户查询 / 密码哈希 / 登录认证
@@ -370,7 +374,7 @@ multi-agent-platform/
 │   ├── test_auth_rbac.py       # JWT / 密码哈希 / RBAC / 向量库降级
 │   └── test_text2sql.py        # 只读防护 / SQL 提取 / 真执行
 ├── .github/workflows/ci.yml    # CI：ruff lint + pytest + 评测门禁
-├── data/                       # 知识库（销售明细、产品、财务、反馈）
+├── data/                       # 知识库（项目/成本/安全问题 CSV + 施工制度文档 + 同步摘要）
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
@@ -393,7 +397,7 @@ pytest tests/ -q      # 29 passed
 
 ### 1. 抗幻觉：精确数字由程序计算，LLM 只组织语言
 
-LLM 擅长语言但不擅长算数。本项目用 **pandas 预先计算所有精确统计**（销售额、占比、环比、交叉表），以"【精确统计数据】"块注入 Prompt，明确要求 LLM 优先使用这些数字、不要自己算。需要更灵活的口径时（写代码时想不到的查询），改走 **Text-to-SQL 直接查业务库**，由 SQL 引擎计算——**能由数据库算的不交给 LLM**。
+LLM 擅长语言但不擅长算数。本项目用 **pandas 预先计算所有精确统计**（成本合计、预算执行率、占比、交叉表、安全闭环率），以"【精确统计】"块注入 Prompt，明确要求 LLM 优先使用这些数字、不要自己算。需要更灵活的口径时（写代码时想不到的查询），改走 **Text-to-SQL 直接查业务库**，由 SQL 引擎计算——**能由数据库算的不交给 LLM**。
 
 ### 2. 为什么用多智能体而不是单一 Prompt
 
@@ -444,7 +448,7 @@ LLM 擅长语言但不擅长算数。本项目用 **pandas 预先计算所有精
 - 工作流节点：**7 个**（Router / Planner / Skill / ToolDecide / Approval / ToolExec / Reviewer）
 - 测试用例：**29 个**（pytest 全 mock、hermetic）+ **20 题**离线评测集
 - Docker 服务：**5 个**（api / redis / postgres / qdrant + seed 初始化）
-- 支持分析：环比增长、区域×产品交叉表、月度趋势、反馈量化统计
+- 支持分析：项目成本排名、区域×成本类别交叉表、月度趋势、预算执行率、质量问题闭环率
 
 ## 📄 License
 

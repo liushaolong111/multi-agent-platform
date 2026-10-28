@@ -1,9 +1,14 @@
-"""LangGraph 工作流编排：Router → Planner → Skill → ReAct(ToolDecide ⇄ ToolExec) → Reviewer。
+"""LangGraph 工作流编排：Router → Planner → Skill → Experts(并行) → Coordinator → ReAct(ToolDecide ⇄ ToolExec) → Reviewer。
 
 Phase 3 结构升级：
 - 旧固定流水线 Skill → Tool(一次性) → Reviewer
 - 新 ReAct 循环：tool_decide →(条件边)→ approval?→ tool_exec →(条件边回环)→ tool_decide
 - 审批节点走 LangGraph interrupt，需 checkpointer 持久化断点状态（MemorySaver）
+
+多智能体协作（克制版）：
+- Skill 给出初步分析后，成本/安全/材料三个领域专家并行分析（asyncio.gather）
+- Coordinator 聚合三专家意见，输出综合回答写回 tool_result
+- 不是全自主群聊，而是"一轮并行 + 聚合"，可控可演示
 """
 import functools
 import logging
@@ -14,6 +19,8 @@ from langgraph.graph import END, START, StateGraph
 
 from app.agent.metrics import metrics
 from app.agent.nodes.approval import approval_node
+from app.agent.nodes.coordinator import coordinator_node
+from app.agent.nodes.experts import experts_node
 from app.agent.nodes.planner import planner_node
 from app.agent.nodes.reviewer import reviewer_node
 from app.agent.nodes.router import router_node
@@ -69,6 +76,8 @@ workflow = StateGraph(AgentState)
 workflow.add_node("router", _timed("router", router_node))
 workflow.add_node("planner", _timed("planner", planner_node))
 workflow.add_node("skill", _timed("skill", skill_node))
+workflow.add_node("experts", _timed("experts", experts_node))
+workflow.add_node("coordinator", _timed("coordinator", coordinator_node))
 workflow.add_node("tool_decide", _timed("tool_decide", tool_decide_node))
 workflow.add_node("approval", _timed("approval", approval_node))
 workflow.add_node("tool_exec", _timed("tool_exec", tool_exec_node))
@@ -77,7 +86,10 @@ workflow.add_node("reviewer", _timed("reviewer", reviewer_node))
 workflow.add_edge(START, "router")
 workflow.add_edge("router", "planner")
 workflow.add_edge("planner", "skill")
-workflow.add_edge("skill", "tool_decide")
+# Skill 初步分析 → 三专家并行分析 → 协调者聚合 → ReAct 工具循环
+workflow.add_edge("skill", "experts")
+workflow.add_edge("experts", "coordinator")
+workflow.add_edge("coordinator", "tool_decide")
 
 # ReAct 决策后：有调用 →（审批 | 执行）；无调用 → 审核
 workflow.add_conditional_edges(

@@ -1,7 +1,6 @@
 """Skill 节点：RAG 检索 + LLM 分析，遍历 Planner 拆解的所有子任务并聚合结果。"""
 import logging
 import os
-from functools import lru_cache
 
 import pandas as pd
 
@@ -11,8 +10,9 @@ import asyncio
 
 from app.agent.llm import safe_ainvoke
 from app.agent.state import AgentState
+from app.client.cache import cached
 from app.client.short_term import get_session, update_session
-from app.client.vectorstore import similarity_search
+from app.client.vectorstore import multi_route_search
 from app.conf import config
 from app.repository.long_term import get_long_term
 from app.service.permission import rag_scope_filter, scoped_region
@@ -24,140 +24,187 @@ logger = logging.getLogger(__name__)
 # 是 RBAC 在"知识检索"这条数据出口上的执行点。
 
 
-@lru_cache(maxsize=8)
+@cached("stats:cost", ttl=300)
 def compute_stats(region: str | None = None) -> str:
-    """用 pandas 精确计算销售数据的统计信息（结果缓存，数据不变时只算一次）。
+    """用 pandas 精确计算项目成本的统计信息（结果缓存，数据不变时只算一次）。
 
-    包含：总量、分产品、分区域、区域×产品交叉、月度趋势、Q1 环比 Q4。
+    包含：总成本、预算执行率、分区域、分成本类别、分项目、月度趋势。
     region 非空时只统计该区域（RBAC 行级隔离的数据出口之一），
     区域受限用户既看不到其他区域明细，也看不到跨区域的汇总值。
     """
     try:
-        df_q1 = pd.read_csv(os.path.join(config.DATA_DIR, "sales_q1.csv"))
-        df_q1["日期"] = pd.to_datetime(df_q1["日期"])
-        df_q1["月份"] = df_q1["日期"].dt.strftime("%Y-%m")
+        df = pd.read_csv(os.path.join(config.DATA_DIR, "cost_records.csv"))
         if region:
-            df_q1 = df_q1[df_q1["区域"] == region]
-        if df_q1.empty:
+            df = df[df["区域"] == region]
+        if df.empty:
             return ""
 
-        total_sales = int(df_q1["销售额"].sum())
-        total_qty = int(df_q1["数量"].sum())
+        total_cost = int(df["金额"].sum())
+        total_budget = int(df["预算金额"].sum())
+        rate = total_cost / total_budget * 100 if total_budget else 0
 
-        by_product = df_q1.groupby("产品")["销售额"].sum().sort_values(ascending=False)
-        by_region = df_q1.groupby("区域")["销售额"].sum().sort_values(ascending=False)
+        by_region = df.groupby("区域")["金额"].sum().sort_values(ascending=False)
+        by_category = df.groupby("成本类别")["金额"].sum().sort_values(ascending=False)
+        by_project = df.groupby("项目名称")["金额"].sum().sort_values(ascending=False)
+        monthly = df.groupby("成本月份")["金额"].sum().sort_index()
 
-        # 区域 × 产品 交叉表
-        cross = df_q1.pivot_table(
-            index="区域", columns="产品", values="销售额", aggfunc="sum", fill_value=0
+        cross = df.pivot_table(
+            index="区域", columns="成本类别", values="金额", aggfunc="sum", fill_value=0
         )
 
-        # 月度趋势
-        monthly = df_q1.groupby("月份")["销售额"].sum()
+        stats = f"""【精确成本统计（由程序计算，可信）】
+实际成本合计：{total_cost:,} 元
+预算合计：{total_budget:,} 元
+预算执行率：{rate:.2f}%
+成本记录数：{len(df)} 条
 
-        # Q1 环比 Q4 2025
-        qoq_info = ""
-        q4_path = os.path.join(config.DATA_DIR, "sales_q4_2025.csv")
-        if os.path.exists(q4_path):
-            df_q4 = pd.read_csv(q4_path)
-            if region and "区域" in df_q4.columns:
-                df_q4 = df_q4[df_q4["区域"] == region]
-            q4_total = int(df_q4["销售额"].sum())
-            qoq = (total_sales - q4_total) / q4_total * 100
-            qoq_info = (
-                f"\n环比（Q1 vs Q4 2025）：\n"
-                f"  Q4 2025 总销售额：{q4_total:,} 元\n"
-                f"  Q1 2026 总销售额：{total_sales:,} 元\n"
-                f"  环比增长率：{qoq:+.1f}%\n"
-            )
-
-        stats = f"""【精确统计数据（由程序计算，可信）】
-总销售额：{total_sales:,} 元
-总销量：{total_qty} 件
-记录数：{len(df_q1)} 条
-
-分产品销售额（降序）：
+分区域成本（降序）：
 """
-        for product, amount in by_product.items():
-            pct = amount / total_sales * 100
-            stats += f"  - {product}：{int(amount):,} 元（占比 {pct:.1f}%）\n"
+        for name, amount in by_region.items():
+            pct = amount / total_cost * 100
+            stats += f"  - {name}：{int(amount):,} 元（占比 {pct:.1f}%）\n"
 
-        stats += "\n分区域销售额（降序）：\n"
-        for region, amount in by_region.items():
-            pct = amount / total_sales * 100
-            stats += f"  - {region}：{int(amount):,} 元（占比 {pct:.1f}%）\n"
+        stats += "\n分成本类别（降序）：\n"
+        for name, amount in by_category.items():
+            pct = amount / total_cost * 100
+            stats += f"  - {name}：{int(amount):,} 元（占比 {pct:.1f}%）\n"
 
-        stats += "\n区域×产品交叉表（元）：\n"
-        stats += "          " + "  ".join(f"{p:>8}" for p in cross.columns) + "\n"
-        for region in cross.index:
-            row = "  ".join(f"{int(cross.loc[region, p]):>8}" for p in cross.columns)
-            stats += f"  {region:<6} {row}\n"
+        stats += "\n分项目成本与预算执行率（降序）：\n"
+        for name, amount in by_project.items():
+            pct = amount / total_cost * 100
+            proj_budget = int(df[df["项目名称"] == name]["预算金额"].sum())
+            proj_rate = amount / proj_budget * 100 if proj_budget else 0
+            # 预警分级：超预算5%黄、10%橙、15%红
+            if proj_rate >= 115:
+                alert = "🔴红色预警"
+            elif proj_rate >= 110:
+                alert = "🟠橙色预警"
+            elif proj_rate >= 105:
+                alert = "🟡黄色预警"
+            else:
+                alert = "✅正常"
+            stats += f"  - {name}：{int(amount):,} 元（占比 {pct:.1f}%，执行率 {proj_rate:.1f}% {alert}）\n"
 
-        stats += "\n月度销售额趋势：\n"
+        stats += "\n月度成本趋势：\n"
         for month, amount in monthly.items():
             stats += f"  - {month}：{int(amount):,} 元\n"
 
-        if qoq_info:
-            stats += qoq_info
+        stats += "\n区域×成本类别交叉表（元）：\n"
+        stats += "          " + "  ".join(f"{p:>8}" for p in cross.columns) + "\n"
+        for region_name in cross.index:
+            row = "  ".join(f"{int(cross.loc[region_name, p]):>8}" for p in cross.columns)
+            stats += f"  {region_name:<6} {row}\n"
 
         return stats
     except Exception as e:
-        logger.warning("[Skill] 统计计算失败：%s", e)
+        logger.warning("[Skill] 成本统计计算失败：%s", e)
         return ""
 
 
-@lru_cache(maxsize=1)
-def compute_feedback_stats() -> str:
-    """从 customer_feedback.md 解析反馈表，计算量化统计。"""
+@cached("stats:safety", ttl=300)
+def compute_safety_stats(region: str | None = None) -> str:
+    """用 pandas 精确计算质量安全问题统计（区域受限角色只算本区域）。"""
     try:
-        import re
-
-        path = os.path.join(config.DATA_DIR, "customer_feedback.md")
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # 解析 Markdown 表格行：| 编号 | 客户 | 评分 | 问题类型 | 描述 |
-        rows = re.findall(
-            r"\|\s*\d+\s*\|\s*([^|]+?)\s*\|\s*(\d)\s*\|\s*([^|]+?)\s*\|",
-            content,
-        )
-        if not rows:
+        df = pd.read_csv(os.path.join(config.DATA_DIR, "safety_issues.csv"))
+        if region:
+            df = df[df["区域"] == region]
+        if df.empty:
             return ""
 
-        ratings = [int(r[1]) for r in rows]
-        avg_rating = sum(ratings) / len(ratings)
+        total = len(df)
+        closed = int((df["状态"] == "已闭环").sum())
+        rate = closed / total * 100 if total else 0
+        by_type = df.groupby("问题类型").size().sort_values(ascending=False)
+        by_severity = df.groupby("严重程度").size().sort_values(ascending=False)
+        by_status = df.groupby("状态").size().sort_values(ascending=False)
+        by_region = df.groupby("区域").size().sort_values(ascending=False)
 
-        # 评分分布
-        dist = {}
-        for r in ratings:
-            dist[r] = dist.get(r, 0) + 1
+        result = f"""【质量安全问题精确统计（由程序计算，可信）】
+统计范围：{region if region else "全部区域"}
+问题总数：{total} 条
+已闭环：{closed} 条
+闭环率：{rate:.2f}%
 
-        # 问题类型分布
-        type_counts = {}
-        type_ratings = {}
-        for _, rating, ftype in rows:
-            type_counts[ftype] = type_counts.get(ftype, 0) + 1
-            type_ratings.setdefault(ftype, []).append(int(rating))
-
-        result = f"""【客户反馈精确统计（由程序计算，可信）】
-反馈总数：{len(rows)} 条
-平均评分：{avg_rating:.2f} / 5.0
-好评率（4-5分）：{(dist.get(5,0)+dist.get(4,0))/len(rows)*100:.1f}%
-差评率（2-3分）：{(dist.get(2,0)+dist.get(3,0))/len(rows)*100:.1f}%
-
-评分分布：
+按问题类型：
 """
-        for score in sorted(dist.keys(), reverse=True):
-            result += f"  - {score} 分：{dist[score]} 条（{dist[score]/len(rows)*100:.0f}%）\n"
+        for name, count in by_type.items():
+            result += f"  - {name}：{count} 条\n"
+        result += "\n按严重程度：\n"
+        for name, count in by_severity.items():
+            result += f"  - {name}：{count} 条\n"
+        result += "\n按整改状态：\n"
+        for name, count in by_status.items():
+            result += f"  - {name}：{count} 条\n"
+        if not region:
+            result += "\n按区域分布：\n"
+            for name, count in by_region.items():
+                result += f"  - {name}：{count} 条\n"
 
-        result += "\n问题类型分布（按反馈数）：\n"
-        for ftype, cnt in sorted(type_counts.items(), key=lambda x: -x[1]):
-            avg = sum(type_ratings[ftype]) / len(type_ratings[ftype])
-            result += f"  - {ftype}：{cnt} 条，平均评分 {avg:.1f}\n"
+        # 预警分级：重大+未闭环=红，较大+未闭环=橙，一般+超30天未闭环=黄
+        from datetime import date as _date
+        today = _date(2026, 7, 1)
+        open_issues = df[df["状态"] != "已闭环"].copy()
+        if not open_issues.empty:
+            red = open_issues[open_issues["严重程度"] == "重大"]
+            orange = open_issues[open_issues["严重程度"] == "较大"]
+            open_issues["发现日期"] = pd.to_datetime(open_issues["发现日期"]).dt.date
+            yellow = open_issues[
+                (open_issues["严重程度"] == "一般")
+                & ((today - open_issues["发现日期"]).apply(lambda x: x.days) > 30)
+            ]
+            result += f"\n预警汇总：🔴重大未闭环 {len(red)} 条 | 🟠较大未闭环 {len(orange)} 条 | 🟡一般超期未闭环 {len(yellow)} 条\n"
+        return result
+    except Exception as e:
+        logger.warning("[Skill] 安全问题统计计算失败：%s", e)
+        return ""
+
+
+@cached("stats:material", ttl=300)
+def compute_material_stats(region: str | None = None) -> str:
+    """用 pandas 精确计算材料库存与到货滞后预警（区域受限角色只算本区域）。"""
+    try:
+        path = os.path.join(config.DATA_DIR, "material_records.csv")
+        if not os.path.exists(path):
+            return ""
+        df = pd.read_csv(path)
+        if region:
+            df = df[df["区域"] == region]
+        if df.empty:
+            return ""
+
+        df["预计到货日期"] = pd.to_datetime(df["预计到货日期"]).dt.date
+        df["计划使用日期"] = pd.to_datetime(df["计划使用日期"]).dt.date
+        df["滞后天数"] = (df["预计到货日期"] - df["计划使用日期"]).apply(lambda x: x.days)
+
+        total = len(df)
+        lagged = df[df["滞后天数"] > 0]
+        by_cat = df.groupby("材料类别").size().sort_values(ascending=False)
+
+        result = f"""【材料库存与到货预警精确统计（由程序计算，可信）】
+统计范围：{region if region else "全部区域"}
+材料记录数：{total} 条
+到货滞后：{len(lagged)} 条
+滞后率：{len(lagged) / total * 100:.1f}%
+
+按材料类别分布：
+"""
+        for name, count in by_cat.items():
+            result += f"  - {name}：{count} 条\n"
+
+        # 滞后预警分级：滞后>10天红，5-10天橙，1-5天黄
+        if not lagged.empty:
+            red = lagged[lagged["滞后天数"] > 10]
+            orange = lagged[(lagged["滞后天数"] > 5) & (lagged["滞后天数"] <= 10)]
+            yellow = lagged[lagged["滞后天数"] <= 5]
+            result += f"\n滞后预警：🔴超10天 {len(red)} 条 | 🟠5-10天 {len(orange)} 条 | 🟡1-5天 {len(yellow)} 条\n"
+
+            result += "\n滞后材料明细（按滞后天数降序）：\n"
+            for _, row in lagged.sort_values("滞后天数", ascending=False).head(10).iterrows():
+                result += f"  - [{row['区域']}] {row['项目名称']} {row['材料名称']}：滞后 {row['滞后天数']} 天（供应商：{row['供应商']}）\n"
 
         return result
     except Exception as e:
-        logger.warning("[Skill] 反馈统计计算失败：%s", e)
+        logger.warning("[Skill] 材料统计计算失败：%s", e)
         return ""
 
 
@@ -177,11 +224,12 @@ def _build_long_term_context(user_id: str) -> str:
 
 
 async def skill_node(state: AgentState) -> dict:
-    """异步 Skill：所有子任务的 LLM 分析通过 asyncio.gather 并发执行。
+    """异步 Skill：子任务 LLM 分析 + 三域统计均通过 asyncio.gather 并发执行。
 
-    旧版串行：N 个子任务 = N × LLM 延迟；并发后 ≈ 1 × LLM 延迟（最慢那个）。
-    检索（本地 FAISS）与统计（lru_cache）本身是微秒级，不值得异步化；
-    真正阻塞的是 LLM 网络调用，所以只对 LLM 部分做 gather。
+    并发点：
+    - pandas 统计（CPU 密集）：asyncio.to_thread 放线程池 + gather 并发三域
+    - LLM 分析（IO 密集）：gather 并发子任务
+    检索（本地 FAISS）本身是微秒级，不值得异步化。
     """
     plan = state.get("plan") or [state["user_input"]]
     session_id = state.get("session_id", "default_session")
@@ -199,28 +247,36 @@ async def skill_node(state: AgentState) -> dict:
     region_scope = scoped_region(role, region)
     scope_filter = rag_scope_filter(role, region)
 
-    # 4. 预计算精确统计（已缓存）：区域受限用户只算本区域，且不注入公司级反馈统计
-    stats = compute_stats(region_scope)
-    feedback_stats = "" if region_scope else compute_feedback_stats()
+    # 4. 预计算精确统计（Redis 缓存 + 线程池异步 + 三域并发）：
+    #    pandas 计算是 CPU 密集型同步操作，用 asyncio.to_thread 放到线程池，
+    #    三个域的统计用 gather 并发，避免阻塞事件循环
+    stats, safety_stats, material_stats = await asyncio.gather(
+        asyncio.to_thread(compute_stats, region_scope),
+        asyncio.to_thread(compute_safety_stats, region_scope),
+        asyncio.to_thread(compute_material_stats, region_scope),
+    )
 
     # 5. 逐子任务准备 prompt（同步、快），LLM 调用并发（异步、慢）
     prompts = []
     doc_counts = []
     last_docs_preview = ""
     for task in plan:
-        # 检索走统一入口并带上权限过滤：region 受限角色不会命中的公司敏感文档
-        docs = similarity_search(task, k=config.RAG_TOP_K, metadata_filter=scope_filter)
+        # 多路召回：分桶路由 + dense/sparse 混合检索 + RRF 融合，并带上 RBAC 权限过滤
+        docs = multi_route_search(task, k=config.RAG_TOP_K, metadata_filter=scope_filter)
         doc_counts.append(len(docs))
         rag_context = "\n\n".join([d.page_content for d in docs])
         last_docs_preview = rag_context[:500]
 
-        prompts.append(f"""你是一个企业数据分析助手。请**直接回答**用户的问题。
+        prompts.append(f"""你是一个工程项目管理数据分析助手。请**直接回答**用户的问题。
 
-【精确销售统计】（优先使用这里的数字！）
+【精确成本统计】（优先使用这里的数字！）
 {stats}
 
-【客户反馈精确统计】（涉及客户满意度时使用）
-{feedback_stats}
+【质量安全问题精确统计】（涉及安全、质量、整改问题时使用）
+{safety_stats}
+
+【材料库存与到货预警精确统计】（涉及材料、库存、到货、供应商时使用）
+{material_stats}
 
 【相关知识片段】
 {rag_context}
@@ -235,9 +291,9 @@ async def skill_node(state: AgentState) -> dict:
 {task}
 
 【输出要求】
-- **只引用数字，不要原样复制"精确统计数据"整块内容**，更不要输出"区域×产品交叉表"
+- **只引用数字，不要原样复制"精确统计数据"整块内容**，更不要输出"区域×成本类别交叉表"
 - 直接给出具体结论和数字，用 **加粗** 标重点数字
-- 结构清晰：先给结论，再用 - 列表补充关键维度（产品/区域/趋势）
+- 结构清晰：先给结论，再用 - 列表补充关键维度（项目/区域/成本类别/趋势）
 - 用简洁的中文回答，300 字以内
 - 如果数据中确实没有相关信息，明确说明""")
 

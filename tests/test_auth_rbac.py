@@ -16,11 +16,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 def test_jwt_issue_and_decode_roundtrip():
     from app.api.auth import decode_token, issue_token
 
-    user = {"user_id": "sales_hd", "role": "sales", "region": "华东"}
+    user = {"user_id": "manager_hd", "role": "manager", "region": "华东"}
     token = issue_token(user)
     decoded = decode_token(token)
-    assert decoded["user_id"] == "sales_hd"
-    assert decoded["role"] == "sales"
+    assert decoded["user_id"] == "manager_hd"
+    assert decoded["role"] == "manager"
     assert decoded["region"] == "华东"
 
 
@@ -29,7 +29,7 @@ def test_jwt_decode_rejects_tampered_token():
 
     from app.api.auth import decode_token, issue_token
 
-    token = issue_token({"user_id": "u", "role": "sales", "region": "华东"})
+    token = issue_token({"user_id": "u", "role": "manager", "region": "华东"})
     bad = token[:-3] + "xxx"
     with pytest.raises(HTTPException) as exc_info:
         decode_token(bad)
@@ -62,37 +62,39 @@ def test_password_hash_and_verify():
 
 # ---- RBAC 数据权限 ----
 
-SALES_USER = {"user_id": "sales_hd", "role": "sales", "region": "华东"}
+MANAGER_USER = {"user_id": "manager_hd", "role": "manager", "region": "华东"}
 ADMIN_USER = {"user_id": "admin", "role": "admin", "region": ""}
 
 
-def test_scope_prompt_only_for_sales():
+def test_scope_prompt_only_for_manager():
     from app.service.permission import data_scope_prompt
 
-    assert "华东" in data_scope_prompt(SALES_USER)
+    assert "华东" in data_scope_prompt(MANAGER_USER)
     assert data_scope_prompt(ADMIN_USER) == ""
 
 
 def test_sql_within_scope_allows_region_filtered():
     from app.service.permission import sql_within_scope
 
-    ok_sql = "SELECT SUM(amount) FROM sales_records WHERE region = '华东' GROUP BY product"
-    assert sql_within_scope(ok_sql, SALES_USER)
+    ok_sql = "SELECT SUM(amount) FROM cost_records WHERE region = '华东' GROUP BY cost_category"
+    assert sql_within_scope(ok_sql, MANAGER_USER)
     # admin 不受限
-    assert sql_within_scope("SELECT SUM(amount) FROM sales_records", ADMIN_USER)
+    assert sql_within_scope("SELECT SUM(amount) FROM cost_records", ADMIN_USER)
 
 
 def test_sql_within_scope_blocks_unfiltered_and_other_region():
     from app.service.permission import sql_within_scope
 
     # 没带区域过滤 → 拦
-    assert not sql_within_scope("SELECT SUM(amount) FROM sales_records", SALES_USER)
+    assert not sql_within_scope("SELECT SUM(amount) FROM cost_records", MANAGER_USER)
     # 查别人的区域 → 拦
     assert not sql_within_scope(
-        "SELECT * FROM sales_records WHERE region = '华北'", SALES_USER
+        "SELECT * FROM safety_issues WHERE region = '华北'", MANAGER_USER
     )
-    # 不碰 sales_records 的查询（如 feedback）→ 放行
-    assert sql_within_scope("SELECT AVG(rating) FROM feedback_records", SALES_USER)
+    # projects 表同样受约束
+    assert not sql_within_scope("SELECT * FROM projects", MANAGER_USER)
+    # 不带 region 字段的表（如 users）→ 放行
+    assert sql_within_scope("SELECT COUNT(*) FROM users", MANAGER_USER)
 
 
 def test_text2sql_tool_blocks_out_of_scope(monkeypatch):
@@ -100,10 +102,10 @@ def test_text2sql_tool_blocks_out_of_scope(monkeypatch):
     import app.agent.nodes.text2sql as t2s
 
     monkeypatch.setattr(
-        t2s, "generate_sql", lambda q, u=None: "SELECT SUM(amount) FROM sales_records"
+        t2s, "generate_sql", lambda q, u=None: "SELECT SUM(amount) FROM cost_records"
     )
-    t2s.set_current_user(SALES_USER)
-    result = t2s.query_business_database.invoke({"question": "总销售额多少"})
+    t2s.set_current_user(MANAGER_USER)
+    result = t2s.query_business_database.invoke({"question": "项目总成本多少"})
     assert "权限不足" in result
     t2s.set_current_user(ADMIN_USER)  # 复位
 

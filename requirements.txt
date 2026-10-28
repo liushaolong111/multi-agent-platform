@@ -11,6 +11,7 @@ python-dotenv==1.2.3
 redis>=4.6,<5.0
 sqlalchemy==2.1.1
 psycopg2-binary==2.9.13
+pymysql==2.2.8
 faiss-cpu==1.13.0
 sentence-transformers==6.1.0
 openai==3.19.2
@@ -21,3 +22,5 @@ slowapi==0.1.9
 PyJWT==2.10.1
 qdrant-client==1.12.1
 structlog==26.1.0
+rank-bm25==0.2.2
+mcp>=2.0.0

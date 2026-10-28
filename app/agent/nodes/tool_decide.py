@@ -65,7 +65,7 @@ async def tool_decide_node(state: AgentState) -> dict:
     )
     prompt = f"""根据以下信息，判断是否需要调用工具来补充数据。
 已有回答完整、无需补充时可以不调用任何工具。
-如果需要精确数字（销售额、排名、占比、环比等），优先用 query_business_database 现场查库。
+如果需要精确数字（成本、预算执行率、问题闭环率、排名、占比等），优先用 query_business_database 现场查库。
 
 全部子任务：{all_tasks}
 已有回答：{existing_result[:200]}{obs_section}"""

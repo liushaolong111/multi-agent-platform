@@ -11,7 +11,7 @@ import os
 import pandas as pd
 from langchain_core.tools import tool
 
-from app.agent.nodes.skill import compute_feedback_stats, compute_stats
+from app.agent.nodes.skill import compute_safety_stats, compute_stats
 from app.agent.nodes.text2sql import current_user, query_business_database
 from app.conf import config
 from app.service.permission import scoped_region
@@ -42,16 +42,14 @@ def _is_company_sensitive(filename: str) -> bool:
 
 @tool
 def query_database() -> str:
-    """查询销售数据库，返回精确统计数据（销售额、销量、分产品/区域汇总、环比）。"""
-    return compute_stats(_current_region()) or "（当前数据权限范围内无销售数据）"
+    """查询工程项目成本统计，返回精确数据（总成本、预算执行率、分项目/区域/成本类别汇总、月度趋势）。"""
+    return compute_stats(_current_region()) or "（当前数据权限范围内无成本数据）"
 
 
 @tool
-def query_feedback() -> str:
-    """查询客户反馈量化统计（平均评分、好评率、问题类型分布）。"""
-    if _current_region():
-        return "（客户反馈为公司级数据，当前角色的数据权限不支持查询）"
-    return compute_feedback_stats()
+def query_safety() -> str:
+    """查询质量安全问题统计（问题总数、闭环率、类型分布、严重程度分布、区域分布）。"""
+    return compute_safety_stats(_current_region()) or "（当前数据权限范围内无安全问题数据）"
 
 
 @tool
@@ -59,7 +57,7 @@ def read_file(filename: str) -> str:
     """读取知识库 data/ 目录下的文件内容。
 
     Args:
-        filename: 文件名，如 product_info.md
+        filename: 文件名，如 项目成本管理办法.md
     """
     name = os.path.basename(filename)
     if _current_region() and _is_company_sensitive(name):
@@ -74,7 +72,18 @@ def read_file(filename: str) -> str:
         return f"读取文件失败：{e}"
 
 
-_TOOLS = [query_business_database, query_database, query_feedback, read_file]
+_TOOLS = [query_business_database, query_database, query_safety, read_file]
+
+# MCP 工具总线：开启后追加 MCP Server 暴露的工具（mysql/vector/erp）
+if config.ENABLE_MCP_TOOLS:
+    try:
+        from app.mcp.client import get_mcp_tools
+        _mcp_tools = get_mcp_tools()
+        _TOOLS.extend(_mcp_tools)
+        logger.info("已启用 MCP 工具总线，追加 %d 个工具", len(_mcp_tools))
+    except Exception as e:
+        logger.warning("MCP 工具总线加载失败：%s", e)
+
 _TOOL_MAP = {t.name: t for t in _TOOLS}
 
 # 高风险工具：APPROVAL_MODE=true 时执行前需人工审批
@@ -97,17 +106,15 @@ def pending_high_risk_calls(pending: list) -> list:
 
 
 def _draw_chart(region: str | None = None) -> str:
-    """生成 Q1 月度销售额趋势折线图（SVG，无外部依赖）。
+    """生成 2026 上半年月度成本趋势折线图（SVG，无外部依赖）。
 
     region 非空时只统计该区域（RBAC：区域受限用户不应看到全公司趋势）。
     """
     try:
-        df = pd.read_csv(os.path.join(config.DATA_DIR, "sales_q1.csv"))
-        df["日期"] = pd.to_datetime(df["日期"])
-        df["月份"] = df["日期"].dt.strftime("%Y-%m")
+        df = pd.read_csv(os.path.join(config.DATA_DIR, "cost_records.csv"))
         if region:
             df = df[df["区域"] == region]
-        monthly = df.groupby("月份")["销售额"].sum().sort_index()
+        monthly = df.groupby("成本月份")["金额"].sum().sort_index()
         months = list(monthly.index)
         values = [int(v) for v in monthly.values]
         wan = [v / 10000 for v in values]  # 转万元
@@ -121,7 +128,7 @@ def _draw_chart(region: str | None = None) -> str:
         vmin = min(wan)
         vmax = max(wan)
         vrange = vmax - vmin if vmax > vmin else 1
-        # Y 轴上下留 10% 余量
+        # Y 轴上下留 15% 余量
         y_min = vmin - vrange * 0.15
         y_max = vmax + vrange * 0.15
         y_range = y_max - y_min
@@ -169,7 +176,7 @@ def _draw_chart(region: str | None = None) -> str:
             points += f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#4e83fd" stroke="#fff" stroke-width="2"/>'
             points += f'<text x="{x:.1f}" y="{y - 12:.1f}" text-anchor="middle" font-size="11" fill="#1d2129" font-weight="600">{v:.1f}万</text>'
 
-        chart_title = f"2026 Q1 {region}月度销售额趋势" if region else "2026 Q1 月度销售额趋势"
+        chart_title = f"2026 上半年 {region}月度成本趋势" if region else "2026 上半年月度成本趋势"
         svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" style="max-width:100%;height:auto;background:#fff;border-radius:8px;font-family:Arial,'Microsoft YaHei',sans-serif">
   <text x="{W/2}" y="28" text-anchor="middle" font-size="15" fill="#1d2129" font-weight="600">{chart_title}</text>
   <line x1="{pad_l}" y1="{pad_t}" x2="{pad_l}" y2="{pad_t + plot_h}" stroke="#c9cdd4" stroke-width="1"/>
@@ -179,7 +186,7 @@ def _draw_chart(region: str | None = None) -> str:
   <path d="{area_path}" fill="#4e83fd" fill-opacity="0.08" stroke="none"/>
   <path d="{line_path}" fill="none" stroke="#4e83fd" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
   {points}
-  <text x="{pad_l - 50}" y="{pad_t - 10}" font-size="11" fill="#8a8f99">销售额(万元)</text>
+  <text x="{pad_l - 50}" y="{pad_t - 10}" font-size="11" fill="#8a8f99">成本(万元)</text>
 </svg>'''
 
         # 用特殊标记包裹，前端 renderMarkdown 识别后直接渲染 SVG
