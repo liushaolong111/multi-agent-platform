@@ -50,7 +50,7 @@
 </head>
 <body>
     <h1>智建 Agent · 工程多智能体分析平台 — 架构流程图</h1>
-    <p class="subtitle">离线数据准备 + 在线智能体处理</p>
+    <p class="subtitle">离线数据准备（entity/mapper 三层） ＋ 多智能体在线处理（Experts 协作） ＋ MCP 工具总线</p>
     <div class="mermaid-container">
         <pre class="mermaid">
 flowchart TD
@@ -58,10 +58,14 @@ flowchart TD
         direction TB
         CSV["data/*.csv<br/>（项目/成本/安全问题/材料库存）"]
         MD["data/*.md<br/>（制度文档）"]
-        CSV --> SEED["seed_business_db.py<br/>灌库 + 演示账号"]
+        ERP0[("外部 ERP 系统<br/>采购订单 · 库存余额 · 到货计划")]
+        CSV --> ENTITY["entity/ 领域实体（Pydantic，脱离 ORM）"]
+        ENTITY --> MAPPERL["mapper/ 转换器<br/>Entity ↔ ORM Model"]
+        ERP0 -->|"MCP：erp_fetch_*（可选数据源）"| MAPPERL
+        MAPPERL --> SEED["seed_business_db.py<br/>灌库 + 演示账号 · Redis 分布式锁保护"]
         SEED --> MYSQL[(MySQL 业务库<br/>projects / cost_records / safety_issues / material_records / users)]
         MD --> INGEST["ingest.py<br/>切块 + bge 向量化"]
-        INGEST --> FAISS[(FAISS 向量库<br/>12 文档 / 34 片段)]
+        INGEST --> FAISS[(FAISS 向量库<br/>知识文档片段)]
         MYSQL --> SYNC["sync_business_to_rag.py<br/>聚合生成业务摘要"]
         SYNC --> SYNCMD["sync_*.md<br/>（company 可见性）"]
         SYNCMD --> REBUILD["重建向量索引"]
@@ -77,12 +81,20 @@ flowchart TD
 
         subgraph SKILL["Skill 节点（并行执行子任务）"]
             direction TB
-            STATS["pandas 精确统计<br/>（成本执行率 / 安全闭环率 / 材料到货滞后）<br/>+ 三级预警分级（黄/橙/红）<br/>→ Redis 缓存 300s + asyncio.to_thread 并发"]
-            RETRIEVE["多路召回 multi_route_search<br/>① 推断 business_domain 分桶路由<br/>② FAISS 向量 + BM25 关键词<br/>③ RRF 融合<br/>④ RBAC visibility 过滤"]
+            STATS["pandas 精确统计<br/>（成本执行率 / 安全闭环率 / 材料到货滞后）<br/>三级预警（黄/橙/红）· asyncio.to_thread 并发 · Redis 缓存 300s"]
+            RETRIEVE["多路召回 multi_route_search<br/>① business_domain 分桶路由<br/>② FAISS 向量 + BM25 关键词 ③ RRF 融合 ④ RBAC 过滤"]
             LLM["LLM 组织语言<br/>（并发调用）"]
             STATS --> LLM
             RETRIEVE --> LLM
         end
+
+        subgraph EXPGROUP["Experts 多智能体专家（asyncio.gather 单轮并行）"]
+            direction LR
+            E1["💰 成本专家"]
+            E2["🛡️ 安全专家"]
+            E3["📦 材料专家"]
+        end
+        COORD["Coordinator 协调者<br/>聚合三专家意见 + 跨域关联分析"]
 
         subgraph REACT["ReAct 工具循环（决策 → 执行 → 观测回喂）"]
             direction TB
@@ -90,6 +102,13 @@ flowchart TD
             EXEC["ToolExec<br/>执行工具"]
             DECIDE --> EXEC
             EXEC --> DECIDE
+        end
+
+        subgraph MCPBUS["MCP 工具总线（统一 tool_call · 解耦可替换 · ENABLE_MCP_TOOLS 开启；默认 LangChain 直连）"]
+            direction LR
+            T1["mcp-mysql<br/>只读 SQL + RBAC 区域过滤"]
+            T2["mcp-vector<br/>多路向量检索"]
+            T3["mcp-erp<br/>采购/库存/到货"]
         end
 
         APPROVAL["Approval<br/>高危操作人工审批"]
@@ -103,27 +122,38 @@ flowchart TD
     API --> ROUTER
     ROUTER --> PLANNER
     PLANNER --> SKILL
-    SKILL --> REACT
+    SKILL --> EXPGROUP
+    EXPGROUP --> COORD
+    COORD --> REACT
+    EXEC --> MCPBUS
     REACT --> APPROVAL
     APPROVAL --> REVIEWER
     REVIEWER --> RESULT
-    REVIEWER -->|"审核通过才存"| LONGMEM
+    REVIEWER -->|"审核通过才存 · 分布式锁"| LONGMEM
     SKILL -->|"上一轮回答前 500 字"| SHORTMEM
     SHORTMEM -.->|"本会话上下文"| SKILL
     LONGMEM -.->|"最近 3 条历史问答"| SKILL
 
     RETRIEVE -.-> FAISS
     STATS -.-> CSV
-    EXEC -.->|"query_business_database"| MYSQL
+    T1 -.-> MYSQL
+    T2 -.-> FAISS
+    T3 -.-> ERP0
 
     classDef datastore fill:#e1f5ff,stroke:#0288d1,stroke-width:2px
     classDef llm fill:#fff3e0,stroke:#f57c00,stroke-width:2px
     classDef node fill:#f3e5f5,stroke:#7b1fa2,stroke-width:1px
     classDef io fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    classDef expert fill:#e8eaf6,stroke:#3949ab,stroke-width:2px
+    classDef mcp fill:#e0f7fa,stroke:#00838f,stroke-width:2px
+    classDef external fill:#efebe9,stroke:#6d4c41,stroke-width:2px
 
     class MYSQL,FAISS,LONGMEM,SHORTMEM datastore
     class LLM llm
     class ROUTER,PLANNER,DECIDE,EXEC,APPROVAL,REVIEWER,STATS,RETRIEVE node
+    class E1,E2,E3,COORD expert
+    class T1,T2,T3 mcp
+    class ERP0 external
     class USER,RESULT io
         </pre>
     </div>
@@ -131,10 +161,13 @@ flowchart TD
         <span><span class="color-box" style="background:#e1f5ff;border:1px solid #0288d1;"></span>数据库/存储</span>
         <span><span class="color-box" style="background:#fff3e0;border:1px solid #f57c00;"></span>LLM 调用</span>
         <span><span class="color-box" style="background:#f3e5f5;border:1px solid #7b1fa2;"></span>智能体节点</span>
+        <span><span class="color-box" style="background:#e8eaf6;border:1px solid #3949ab;"></span>多智能体专家</span>
+        <span><span class="color-box" style="background:#e0f7fa;border:1px solid #00838f;"></span>MCP 工具总线</span>
+        <span><span class="color-box" style="background:#efebe9;border:1px solid #6d4c41;"></span>外部 ERP</span>
         <span><span class="color-box" style="background:#e8f5e9;border:1px solid #388e3c;"></span>输入输出</span>
     </div>
-    <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    <script src="assets/mermaid.min.js"></script>
+    <script>
         mermaid.initialize({
             startOnLoad: true,
             theme: 'default',
